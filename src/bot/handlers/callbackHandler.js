@@ -165,24 +165,64 @@ async function handleWaitlistJoin(ctx, student) {
     const message = `
 ⏰ <b>הצטרפות לרשימת המתנה</b>
 
-בחר עבור איזה יום אתה רוצה להיות ברשימת המתנה:
+בחר עבור איזה יום תפוס אתה רוצה להיות ברשימת המתנה:
+(מוצגים רק ימים עם שיעורים קיימים)
     `;
 
-    // Show available days for next 2 weeks
-    const buttons = [];
     const nextTwoWeeks = [];
+    const Lesson = require('../../models/Lesson');
     
-    for (let i = 1; i <= 14; i++) {
-      const date = moment().add(i, 'days');
-      if (date.day() !== 6) { // Skip Saturday
-        nextTwoWeeks.push({
-          date: date.format('YYYY-MM-DD'),
-          displayName: `${date.format('dddd')} ${date.format('D/M')}`
-        });
-      }
+    // Get all booked lessons in the next 2 weeks
+    const startDate = moment().startOf('day');
+    const endDate = moment().add(14, 'days').endOf('day');
+    
+    const bookedLessons = await Lesson.findAll({
+      where: {
+        start_time: {
+          [require('sequelize').Op.between]: [startDate.toDate(), endDate.toDate()]
+        },
+        status: ['confirmed', 'pending']
+      },
+      attributes: ['start_time'],
+      order: [['start_time', 'ASC']]
+    });
+    
+    // Extract unique dates from booked lessons
+    const bookedDates = new Set();
+    bookedLessons.forEach(lesson => {
+      const lessonDate = moment(lesson.start_time).format('YYYY-MM-DD');
+      bookedDates.add(lessonDate);
+    });
+    
+    // If no booked lessons, show message
+    if (bookedDates.size === 0) {
+      await ctx.editMessageText(
+        '⏰ <b>אין ימים תפוסים</b>\n\nכרגע אין שיעורים תפוסים בשבועיים הקרובים.\nתוכל לנסות לתאם שיעור בזמן פנוי או לחזור מאוחר יותר.',
+        {
+          parse_mode: 'HTML',
+          reply_markup: Markup.inlineKeyboard([
+            [Markup.button.callback('📅 הצג זמנים זמינים', 'show_available_times')],
+            [Markup.button.callback('🔙 חזור', 'book_lesson')]
+          ]).reply_markup
+        }
+      );
+      return;
     }
+    
+    // Convert to array and sort
+    const sortedDates = Array.from(bookedDates).sort();
+    
+    // Create display format
+    sortedDates.forEach(dateStr => {
+      const date = moment(dateStr);
+      nextTwoWeeks.push({
+        date: dateStr,
+        displayName: getHebrewDayName(date.day()) + ' ' + date.format('D/M')
+      });
+    });
 
     // Group by pairs for buttons
+    const buttons = [];
     for (let i = 0; i < nextTwoWeeks.length; i += 2) {
       const row = [];
       row.push(Markup.button.callback(

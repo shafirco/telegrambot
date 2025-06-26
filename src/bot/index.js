@@ -129,7 +129,7 @@ bot.command('book', commandHandlers.book);
 bot.command('schedule', commandHandlers.schedule);
 bot.command('cancel', commandHandlers.cancel);
 bot.command('status', commandHandlers.status);
-bot.command('waitlist', commandHandlers.waitlist);
+bot.command('waitlist', commandHandlers.viewWaitlist);
 bot.command('settings', commandHandlers.settings);
 bot.command('feedback', commandHandlers.feedback);
 

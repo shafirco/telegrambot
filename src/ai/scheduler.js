@@ -49,10 +49,10 @@ const SchedulingRequestSchema = z.object({
 class AIScheduler {
   constructor() {
     this.llm = new ChatOpenAI({
-      modelName: settings.ai.model,
-      temperature: settings.ai.temperature,
-      maxTokens: settings.ai.maxTokens,
-      timeout: settings.ai.timeout,
+      modelName: 'gpt-3.5-turbo',
+      temperature: 0.3,
+      maxTokens: 500,
+      timeout: 10000,
       openAIApiKey: process.env.OPENAI_API_KEY
     });
 
@@ -65,23 +65,30 @@ class AIScheduler {
 
   setupPromptTemplate() {
     this.promptTemplate = ChatPromptTemplate.fromMessages([
-      ['system', `אתה עוזר תיאום שיעורים AI עבור מורה מתמטיקה פרטי. המשימה שלך היא להבין בקשות תיאום בעברית ובאנגלית ולהמיר אותן לנתונים מובנים.
+      ['system', `אתה עוזר תיאום שיעורים AI עבור המורה שפיר ללמידת מתמטיקה. 
+
+חשוב מאוד: ענה רק ואך ורק בעברית! אל תענה באנגלית בשום מקרה!
+
+המשימה שלך היא להבין בקשות תיאום ולהמיר אותן לנתונים מובנים.
 
 הקשר נוכחי:
-- אזור זמן מורה: ${settings.teacher.timezone}
+- המורה: שפיר
+- אזור זמן: ${settings.teacher.timezone}
 - שעות פעילות: ${settings.businessHours.start} - ${settings.businessHours.end}
 - ימי עבודה: ${settings.businessHours.days.join(', ')}
 - משך שיעור ברירת מחדל: ${settings.lessons.defaultDuration} דקות
 - תאריך/שעה נוכחיים: {current_datetime}
 
 הנחיות חשובות:
-1. נתח את הודעת המשתמש כדי להבין את כוונת התיאום שלו
-2. חלץ העדפות תאריך/שעה - אם אין תאריך/שעה ספציפיים, השאר את המערך ריק
-3. אם יש תאריך/שעה, ודא שהם מחרוזות תקינות (לא null)
-4. זהה פרטי שיעור (נושא, רמת קושי וכו')
-5. קבע דחיפות וגמישות
-6. ספק ציון ביטחון לפרשנות שלך
-7. כתוב reasoning בעברית
+1. ענה תמיד בעברית בלבד!
+2. נתח את הודעת המשתמש כדי להבין את כוונת התיאום שלו
+3. חלץ העדפות תאריך/שעה - אם אין תאריך/שעה ספציפיים, השאר את המערך ריק
+4. אם יש תאריך/שעה, ודא שהם מחרוזות תקינות (לא null)
+5. זהה פרטי שיעור (נושא, רמת קושי וכו')
+6. קבע דחיפות וגמישות
+7. ספק ציון ביטחון לפרשנות שלך
+8. כתוב reasoning בעברית בלבד
+9. חתום תמיד עם "בברכה, שפיר."
 
 כוונות זמינות:
 - book_lesson: המשתמש רוצה לתאם שיעור חדש
@@ -125,7 +132,7 @@ class AIScheduler {
   "urgency": "medium",
   "reasoning": "המשתמש שואל על זמינות כללית ללא זמן ספציפי."
 }}`],
-      ['human', 'הודעת תלמיד: "{user_message}"\n\nפרופיל תלמיד:\n- שם: {student_name}\n- אזור זמן: {student_timezone}\n- משך מועדף: {preferred_duration} דקות\n- שיעורים אחרונים: {recent_lessons}\n\nאנא נתח את ההודעה והחזר נתוני תיאום מובנים כ-JSON תקין.']
+      ['human', 'הודעת תלמיד: "{user_message}"\n\nפרופיל תלמיד:\n- שם: {student_name}\n- אזור זמן: {student_timezone}\n- משך מועדף: {preferred_duration} דקות\n- שיעורים אחרונים: {recent_lessons}\n\nאנא נתח את ההודעה והחזר נתוני תיאום מובנים כ-JSON תקין. זכור: ענה רק בעברית!']
     ]);
   }
 
@@ -289,10 +296,10 @@ class AIScheduler {
   async generateResponse(schedulingData, availableSlots = [], studentName = '') {
     try {
       const responsePrompt = ChatPromptTemplate.fromMessages([
-        ['system', `אתה עוזר תיאום שיעורים ידידותי של מורה מתמטיקה. צור תגובה מועילה לתלמיד בהתבסס על בקשת התיאום שלו והאפשרויות הזמינות.
+        ['system', `אתה עוזר תיאום שיעורים ידידותי של המורה שפיר. צור תגובה מועילה לתלמיד בהתבסס על בקשת התיאום שלו והאפשרויות הזמינות.
 
 הנחיות:
-- תמיד השב בעברית
+- תמיד השב בעברית בלבד!
 - היה חם ומקצועי
 - פנה לתלמיד בשמו כשמסופק
 - הסבר בבירור את האפשרויות הזמינות
@@ -300,8 +307,10 @@ class AIScheduler {
 - הצע חלופות כשהזמנים המועדפים לא זמינים
 - השתמש באימוג'ים במידה והם מתאימים
 - שמור על תגובות קצרות אך מידעיות
+- סיים כל הודעה עם "בברכה, שפיר."
 
 הקשר נוכחי:
+- המורה: שפיר
 - אזור זמן מורה: ${settings.teacher.timezone}
 - שעות פעילות: ${settings.businessHours.start} - ${settings.businessHours.end}
 - ימי עבודה: ${settings.businessHours.days.join(', ')}`],
@@ -309,7 +318,7 @@ class AIScheduler {
 זמנים זמינים: {available_slots}
 שם התלמיד: {student_name}
 
-צור הודעת תגובה מתאימה בעברית.`]
+צור הודעת תגובה מתאימה בעברית וסיים עם "בברכה, שפיר."`]
       ]);
 
       const responseChain = responsePrompt
@@ -324,6 +333,11 @@ class AIScheduler {
 
       logger.aiLog('response_generated', JSON.stringify(schedulingData), response.substring(0, 100));
 
+      // ודא שהחתימה קיימת
+      if (!response.includes('בברכה, שפיר')) {
+        return response.trim() + '\n\nבברכה,\nשפיר.';
+      }
+
       return response;
 
     } catch (error) {
@@ -331,10 +345,10 @@ class AIScheduler {
       
       // Fallback response in Hebrew
       if (schedulingData.intent === 'book_lesson') {
-        return `שלום${studentName ? ` ${studentName}` : ''}! אשמח לעזור לך לתאם שיעור. תן לי לבדוק איזה זמנים זמינים ואחזור אליך בקרוב. 📚`;
+        return `שלום${studentName ? ` ${studentName}` : ''}! אשמח לעזור לך לתאם שיעור. תן לי לבדוק איזה זמנים זמינים ואחזור אליך בקרוב. 📚\n\nבברכה,\nשפיר.`;
       }
       
-      return `שלום${studentName ? ` ${studentName}` : ''}! קיבלתי את ההודעה שלך לגבי תיאום השיעור. תן לי לעבד את הבקשה ולתת לך את האפשרויות הטובות ביותר. 🕐`;
+      return `שלום${studentName ? ` ${studentName}` : ''}! קיבלתי את ההודעה שלך לגבי תיאום השיעור. תן לי לעבד את הבקשה ולתת לך את האפשרויות הטובות ביותר. 🕐\n\nבברכה,\nשפיר.`;
     }
   }
 

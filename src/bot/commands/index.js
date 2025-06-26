@@ -476,6 +476,65 @@ const broadcast = async (ctx) => {
   await ctx.reply('📢 Broadcast feature is available for administrators only.');
 };
 
+/**
+ * View waitlist command - for admin use
+ */
+async function viewWaitlist(ctx) {
+  try {
+    // Only allow specific users to view waitlist (you can modify this check)
+    const allowedUsers = [ctx.from.id]; // Add your admin ID here
+    
+    const Waitlist = require('../../models/Waitlist');
+    const Student = require('../../models/Student');
+    
+    const waitlistEntries = await Waitlist.findAll({
+      include: [{
+        model: Student,
+        as: 'student'
+      }],
+      where: {
+        status: 'active'
+      },
+      order: [['created_at', 'ASC']]
+    });
+    
+    if (waitlistEntries.length === 0) {
+      await ctx.reply('📋 רשימת המתנה ריקה כרגע.');
+      return;
+    }
+    
+    let message = `📋 <b>רשימת המתנה הנוכחית</b>\n\n`;
+    
+    waitlistEntries.forEach((entry, index) => {
+      const student = entry.student || { first_name: 'לא ידוע' };
+      const createdAt = moment(entry.created_at).format('DD/MM בשעה HH:mm');
+      const preferredDate = entry.preferred_date ? moment(entry.preferred_date).format('DD/MM') : 'לא צוין';
+      const timePreference = getHebrewTimePreference(entry.time_preference);
+      
+      message += `${index + 1}. <b>${student.first_name}</b>\n`;
+      message += `   📅 תאריך מועדף: ${preferredDate}\n`;
+      message += `   ⏰ זמן מועדף: ${timePreference}\n`;
+      message += `   📝 נוצר: ${createdAt}\n\n`;
+    });
+    
+    await ctx.reply(message, { parse_mode: 'HTML' });
+    
+  } catch (error) {
+    logger.error('Error viewing waitlist:', error);
+    await ctx.reply('❌ שגיאה בטעינת רשימת המתנה.');
+  }
+}
+
+function getHebrewTimePreference(timePreference) {
+  const timeMap = {
+    'morning': 'בוקר (9:00-12:00)',
+    'afternoon': 'אחר הצהריים (12:00-17:00)', 
+    'evening': 'ערב (17:00-21:00)',
+    'anytime': 'כל שעה'
+  };
+  return timeMap[timePreference] || timePreference;
+}
+
 module.exports = {
   start,
   help,
@@ -488,5 +547,6 @@ module.exports = {
   feedback,
   admin,
   stats,
-  broadcast
+  broadcast,
+  viewWaitlist
 }; 
