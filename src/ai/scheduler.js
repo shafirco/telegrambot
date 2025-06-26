@@ -91,25 +91,25 @@ Flexibility levels:
 - flexible: User is very flexible (e.g., "anytime this week")
 
 Example valid JSON response:
-{
+{{
   "intent": "book_lesson",
   "confidence": 0.9,
   "datetime_preferences": [
-    {
+    {{
       "date": "2024-01-15",
       "time": "15:00",
       "flexibility": "exact",
       "duration_minutes": 60
-    }
+    }}
   ],
-  "lesson_details": {
+  "lesson_details": {{
     "subject": "math",
     "topic": "algebra",
     "difficulty": "intermediate"
-  },
+  }},
   "urgency": "medium",
   "reasoning": "User clearly stated they want to book a math lesson on January 15th at 3 PM for algebra help."
-}`],
+}}`],
       ['human', 'Student message: "{user_message}"\n\nStudent profile:\n- Name: {student_name}\n- Timezone: {student_timezone}\n- Preferred duration: {preferred_duration} minutes\n- Recent lessons: {recent_lessons}\n\nPlease analyze this message and return structured scheduling data as JSON.']
     ]);
   }
