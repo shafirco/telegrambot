@@ -134,36 +134,54 @@ class SchedulerService {
         return await this.findNextAvailableSlots(durationMinutes, 7); // Next 7 days
       }
 
-      // Check teacher availability for this date
-      const teacherSlots = await TeacherAvailability.getAvailableSlots(searchDate, durationMinutes);
+      // Generate basic available slots for business hours
+      const availableSlots = [];
+      const searchMoment = moment.tz(searchDate, settings.teacher.timezone);
       
-      if (teacherSlots.length === 0) {
+      // Skip if not a business day
+      if (!settings.isBusinessDay(searchMoment.toDate())) {
         return [];
       }
 
-      // Filter out existing lessons and conflicts
-      const availableSlots = [];
-      
-      for (const slot of teacherSlots) {
-        const hasConflict = await Lesson.hasConflict(slot.start, slot.end);
+      // Create time slots every 30 minutes during business hours
+      const startHour = parseInt(settings.businessHours.start.split(':')[0]);
+      const startMinute = parseInt(settings.businessHours.start.split(':')[1]);
+      const endHour = parseInt(settings.businessHours.end.split(':')[0]);
+      const endMinute = parseInt(settings.businessHours.end.split(':')[1]);
+
+      let currentSlot = searchMoment.clone().set({ hour: startHour, minute: startMinute, second: 0 });
+      const endTime = searchMoment.clone().set({ hour: endHour, minute: endMinute, second: 0 });
+
+      while (currentSlot.isBefore(endTime.subtract(durationMinutes, 'minutes'))) {
+        const slotEnd = currentSlot.clone().add(durationMinutes, 'minutes');
         
-        if (!hasConflict) {
-          // Check if slot meets minimum advance booking requirement
-          const hoursUntilSlot = moment(slot.start).diff(moment(), 'hours');
+        // Check if this slot is in the future (at least 2 hours from now)
+        const hoursUntilSlot = currentSlot.diff(moment(), 'hours');
+        if (hoursUntilSlot >= 2) {
           
-          if (hoursUntilSlot >= settings.lessons.minAdvanceBooking) {
-            availableSlots.push({
-              start: slot.start,
-              end: slot.end,
-              duration: slot.duration,
-              date: moment(slot.start).format('YYYY-MM-DD'),
-              time: moment(slot.start).format('HH:mm'),
-              formattedTime: moment(slot.start).format('dddd, MMMM Do, YYYY [at] h:mm A'),
-              availabilityId: slot.availabilityId,
-              pricePerHour: slot.pricePerHour
-            });
+          // Check for conflicts with existing lessons
+          const hasConflict = await Lesson.hasConflict(currentSlot.toDate(), slotEnd.toDate());
+          
+          if (!hasConflict) {
+            // Check teacher availability (manual blocks)
+            const isTeacherAvailable = await this.checkTeacherAvailability(currentSlot.toDate(), durationMinutes);
+            
+            if (isTeacherAvailable.available) {
+              availableSlots.push({
+                start: currentSlot.toDate(),
+                end: slotEnd.toDate(),
+                duration: durationMinutes,
+                date: currentSlot.format('YYYY-MM-DD'),
+                time: currentSlot.format('HH:mm'),
+                formattedTime: currentSlot.format('dddd, D בMMMM בשעה HH:mm'),
+                pricePerHour: settings.lessons.defaultPrice || 100
+              });
+            }
           }
         }
+        
+        // Move to next 30-minute slot
+        currentSlot.add(30, 'minutes');
       }
 
       return availableSlots;

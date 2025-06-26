@@ -1,4 +1,5 @@
 const schedulerService = require('../../services/scheduler');
+const aiScheduler = require('../../ai/scheduler');
 const { Markup } = require('telegraf');
 const logger = require('../../utils/logger');
 
@@ -14,12 +15,19 @@ const handleText = async (ctx) => {
 
     logger.botLog('text_message', student.telegram_id, student.username, message);
 
+    // Show typing indicator
+    await ctx.sendChatAction('typing');
+
     // Check conversation state
     const conversationState = ctx.session.step;
 
     switch (conversationState) {
       case 'booking_request':
         await handleBookingRequest(ctx, message, student);
+        break;
+      
+      case 'waitlist_request':
+        await handleWaitlistRequest(ctx, message, student);
         break;
       
       case 'feedback':
@@ -35,28 +43,40 @@ const handleText = async (ctx) => {
         break;
       
       default:
-        // General natural language processing
+        // General natural language processing with AI
         await handleGeneralMessage(ctx, message, student);
         break;
     }
 
   } catch (error) {
     logger.error('Error handling text message:', error);
-    await ctx.reply('❌ Sorry, I encountered an error processing your message. Please try again.');
+    await ctx.reply('❌ סליחה, נתקלתי בשגיאה בעיבוד ההודעה שלך. אנא נסה שוב.');
   }
 };
 
 const handleBookingRequest = async (ctx, message, student) => {
   try {
-    // Show typing indicator
-    await ctx.sendChatAction('typing');
+    // Use AI to process the booking request
+    logger.aiLog('processing_booking_request', message, null, { studentId: student.id });
+    
+    const aiResult = await aiScheduler.processSchedulingRequest(message, {
+      id: student.id,
+      name: student.getDisplayName(),
+      timezone: student.timezone || 'Asia/Jerusalem',
+      preferredDuration: student.preferred_lesson_duration || 60,
+      recentLessons: [] // We can add this later
+    });
 
-    // Process the booking request with AI
-    const result = await schedulerService.processBookingRequest(message, student, ctx.session.data);
+    logger.aiLog('ai_result', message, JSON.stringify(aiResult), {
+      intent: aiResult.intent,
+      confidence: aiResult.confidence
+    });
+
+    // Process based on AI understanding
+    const result = await schedulerService.processBookingRequest(message, student, { aiResult });
 
     if (result.success) {
       if (result.type === 'slots_available') {
-        // Show available slots
         await showAvailableSlots(ctx, result.availableSlots, result.schedulingData);
       } else if (result.type === 'general_response') {
         await ctx.reply(result.message, { parse_mode: 'HTML' });
@@ -77,39 +97,70 @@ const handleBookingRequest = async (ctx, message, student) => {
 
   } catch (error) {
     logger.error('Error handling booking request:', error);
-    await ctx.reply('❌ I had trouble processing your booking request. Could you please try rephrasing your request?');
+    await ctx.reply('❌ היה לי קושי לעבד את בקשת התיאום שלך. אתה יכול לנסות לנסח את הבקשה שוב?');
+    ctx.session.step = null;
+  }
+};
+
+const handleWaitlistRequest = async (ctx, message, student) => {
+  try {
+    // Use AI to understand waitlist preferences
+    const aiResult = await aiScheduler.processSchedulingRequest(message, {
+      id: student.id,
+      name: student.getDisplayName(),
+      timezone: student.timezone || 'Asia/Jerusalem'
+    });
+
+    if (aiResult.intent === 'join_waitlist' && aiResult.confidence > 0.6) {
+      // Process waitlist addition
+      const result = await schedulerService.addToWaitlist(aiResult, student);
+      
+      if (result.success) {
+        await ctx.reply(
+          `✅ <b>נוספת לרשימת המתנה!</b>\n\nמיקום ברשימה: #${result.waitlistEntry.position}\n\nאני אודיע לך מיד כשיתפנה זמן מתאים! 🔔`,
+          { parse_mode: 'HTML' }
+        );
+      } else {
+        await ctx.reply('❌ לא הצלחתי להוסיף אותך לרשימת המתנה. אנא נסה שוב.');
+      }
+    } else {
+      await ctx.reply(
+        '🤔 לא הבנתי בדיוק איזה זמנים אתה מעדיף.\n\nאתה יכול לומר משהו כמו:\n• "אני רוצה להיות ברשימת המתנה לימי שני אחר הצהריים"\n• "תוסיף אותי לרשימת המתנה לכל זמן פנוי השבוע הבא"'
+      );
+    }
+    
+    ctx.session.step = null;
+
+  } catch (error) {
+    logger.error('Error handling waitlist request:', error);
+    await ctx.reply('❌ הייתה שגיאה בעיבוד בקשת רשימת המתנה. אנא נסה שוב.');
     ctx.session.step = null;
   }
 };
 
 const showAvailableSlots = async (ctx, slots, schedulingData) => {
-  let message = '📅 <b>Available Time Slots</b>\n\nHere are the available times that match your request:\n\n';
+  let message = '📅 <b>זמנים זמינים</b>\n\nהנה הזמנים הזמינים שמתאימים לבקשה שלך:\n\n';
 
   const buttons = [];
   
   slots.slice(0, 6).forEach((slot, index) => {
     message += `${index + 1}. ${slot.formattedTime}\n`;
-    message += `   ⏱️ ${slot.duration} minutes\n\n`;
+    message += `   ⏱️ ${slot.duration} דקות\n\n`;
     
     buttons.push([Markup.button.callback(
-      `Book Slot ${index + 1}`, 
-      `book_slot_${JSON.stringify({
-        start: slot.start,
-        end: slot.end,
-        duration: slot.duration,
-        schedulingData: schedulingData
-      }).substring(0, 60)}_${index}`
+      `תאם זמן ${index + 1}`, 
+      `book_slot_${index}`
     )]);
   });
 
   if (slots.length > 6) {
-    message += `\n<i>... and ${slots.length - 6} more slots available</i>`;
-    buttons.push([Markup.button.callback('Show More Slots', 'show_more_slots')]);
+    message += `\n<i>... ועוד ${slots.length - 6} זמנים זמינים</i>`;
+    buttons.push([Markup.button.callback('הצג עוד זמנים', 'show_more_slots')]);
   }
 
   buttons.push([
-    Markup.button.callback('⏰ Join Waitlist Instead', 'join_waitlist'),
-    Markup.button.callback('🔍 Different Time', 'book_different_time')
+    Markup.button.callback('⏰ הצטרף לרשימת המתנה', 'join_waitlist'),
+    Markup.button.callback('🔍 זמן אחר', 'book_different_time')
   ]);
 
   await ctx.reply(message, {
@@ -118,32 +169,33 @@ const showAvailableSlots = async (ctx, slots, schedulingData) => {
   });
 
   // Store slots in session for booking
+  ctx.session.data = ctx.session.data || {};
   ctx.session.data.availableSlots = slots;
   ctx.session.data.schedulingData = schedulingData;
   ctx.session.step = 'slot_selection';
 };
 
 const showWaitlistOptions = async (ctx, alternativeSlots, schedulingData) => {
-  let message = '😔 <b>No Available Slots</b>\n\nI don\'t have any slots available for your preferred times.';
+  let message = '😔 <b>אין זמנים זמינים</b>\n\nאין לי זמנים פנויים עבור הזמנים המועדפים עליך.';
 
   if (alternativeSlots.length > 0) {
-    message += '\n\n📅 <b>Alternative Times:</b>\n';
+    message += '\n\n📅 <b>זמנים חלופיים:</b>\n';
     alternativeSlots.slice(0, 3).forEach((slot, index) => {
       message += `${index + 1}. ${slot.formattedTime}\n`;
     });
   }
 
-  message += '\n\n💡 <b>What would you like to do?</b>';
+  message += '\n\n💡 <b>מה תרצה לעשות?</b>';
 
   const buttons = [];
 
   if (alternativeSlots.length > 0) {
-    buttons.push([Markup.button.callback('📅 Book Alternative Time', 'book_alternative')]);
+    buttons.push([Markup.button.callback('📅 תאם זמן חלופי', 'book_alternative')]);
   }
 
   buttons.push([
-    Markup.button.callback('⏰ Join Waitlist', 'join_waitlist_confirmed'),
-    Markup.button.callback('🔍 Try Different Request', 'book_different_time')
+    Markup.button.callback('⏰ הצטרף לרשימת המתנה', 'join_waitlist_confirmed'),
+    Markup.button.callback('🔍 נסה בקשה אחרת', 'book_different_time')
   ]);
 
   await ctx.reply(message, {
@@ -151,6 +203,7 @@ const showWaitlistOptions = async (ctx, alternativeSlots, schedulingData) => {
     reply_markup: Markup.inlineKeyboard(buttons).reply_markup
   });
 
+  ctx.session.data = ctx.session.data || {};
   ctx.session.data.alternativeSlots = alternativeSlots;
   ctx.session.data.schedulingData = schedulingData;
   ctx.session.step = 'waitlist_decision';
@@ -160,14 +213,14 @@ const showAvailabilityResults = async (ctx, slots, aiMessage) => {
   let message = aiMessage;
 
   if (slots.length > 0) {
-    message += '\n\n📅 <b>Next Available Times:</b>\n';
+    message += '\n\n📅 <b>הזמנים הזמינים הבאים:</b>\n';
     slots.slice(0, 5).forEach((slot, index) => {
       message += `• ${slot.formattedTime}\n`;
     });
 
     const buttons = Markup.inlineKeyboard([
-      [Markup.button.callback('📚 Book One of These', 'book_from_availability')],
-      [Markup.button.callback('🔍 Check Different Times', 'book_lesson')]
+      [Markup.button.callback('📚 תאם אחד מהזמנים האלה', 'book_from_availability')],
+      [Markup.button.callback('🔍 בדוק זמנים אחרים', 'book_lesson')]
     ]);
 
     await ctx.reply(message, {
@@ -175,6 +228,7 @@ const showAvailabilityResults = async (ctx, slots, aiMessage) => {
       reply_markup: buttons.reply_markup
     });
 
+    ctx.session.data = ctx.session.data || {};
     ctx.session.data.availableSlots = slots;
   } else {
     await ctx.reply(message, { parse_mode: 'HTML' });
@@ -185,80 +239,120 @@ const showAvailabilityResults = async (ctx, slots, aiMessage) => {
 
 const handleGeneralMessage = async (ctx, message, student) => {
   try {
-    // Show typing indicator
-    await ctx.sendChatAction('typing');
+    // Use AI to understand intent
+    const aiResult = await aiScheduler.processSchedulingRequest(message, {
+      id: student.id,
+      name: student.getDisplayName(),
+      timezone: student.timezone || 'Asia/Jerusalem'
+    });
 
-    // Process with AI to understand intent
-    const result = await schedulerService.processBookingRequest(message, student);
+    logger.aiLog('general_message_processed', message, JSON.stringify(aiResult), {
+      intent: aiResult.intent,
+      confidence: aiResult.confidence
+    });
 
-    if (result.success) {
-      if (result.type === 'slots_available') {
-        await showAvailableSlots(ctx, result.availableSlots, result.schedulingData);
-      } else if (result.type === 'availability_check') {
-        await showAvailabilityResults(ctx, result.availableSlots, result.message);
-      } else if (result.type === 'reschedule_lesson_selection') {
-        await showLessonSelection(ctx, result.upcomingLessons, 'reschedule');
-      } else if (result.type === 'cancel_lesson_selection') {
-        await showLessonSelection(ctx, result.upcomingLessons, 'cancel');
-      } else {
-        await ctx.reply(result.message, { parse_mode: 'HTML' });
-      }
-    } else {
-      if (result.type === 'no_slots_waitlist_offered') {
-        await showWaitlistOptions(ctx, result.alternativeSlots, result.schedulingData);
-      } else {
-        await ctx.reply(result.message, { parse_mode: 'HTML' });
-        
-        // Offer help if confidence is low
-        if (result.schedulingData?.confidence < 0.5) {
-          const helpButtons = Markup.inlineKeyboard([
-            [Markup.button.callback('📚 Book Lesson', 'book_lesson')],
-            [Markup.button.callback('❓ Help', 'help')]
-          ]);
+    // Route based on AI understanding
+    switch (aiResult.intent) {
+      case 'book_lesson':
+        if (aiResult.confidence > 0.7) {
+          ctx.session.step = 'booking_request';
+          await handleBookingRequest(ctx, message, student);
+        } else {
+          await ctx.reply(
+            '🤔 נראה שאתה רוצה לתאם שיעור, אבל לא הבנתי בדיוק מתי.\n\nאתה יכול לומר:\n• "אני רוצה שיעור מחר בשעה 3"\n• "מתי יש זמנים פנויים השבוע?"\n• "תתאם לי שיעור ביום ראשון"',
+            {
+              reply_markup: Markup.inlineKeyboard([
+                [Markup.button.callback('📅 הצג זמנים זמינים', 'show_available_times')]
+              ]).reply_markup
+            }
+          );
+        }
+        break;
 
-          await ctx.reply('Need help? I can guide you through booking a lesson:', {
-            reply_markup: helpButtons.reply_markup
+      case 'check_availability':
+        const result = await schedulerService.processBookingRequest(message, student, { aiResult });
+        if (result.success && result.type === 'availability_check') {
+          await showAvailabilityResults(ctx, result.availableSlots, result.message);
+        } else {
+          await ctx.reply('בוא נבדוק מה יש פנוי!', {
+            reply_markup: Markup.inlineKeyboard([
+              [Markup.button.callback('📅 הצג זמנים זמינים', 'show_available_times')]
+            ]).reply_markup
           });
         }
-      }
+        break;
+
+      case 'cancel_lesson':
+        await ctx.reply(
+          '🗓️ איזה שיעור אתה רוצה לבטל?\n\nאתה יכול לבדוק את השיעורים הקרובים שלך ולבחור איזה לבטל.',
+          {
+            reply_markup: Markup.inlineKeyboard([
+              [Markup.button.callback('📅 הצג את השיעורים שלי', 'my_schedule')]
+            ]).reply_markup
+          }
+        );
+        break;
+
+      case 'reschedule_lesson':
+        await ctx.reply(
+          '🔄 איזה שיעור אתה רוצה לשנות?\n\nבחר שיעור מהרשימה והגד לי לאיזה זמן חדש אתה רוצה להעביר אותו.',
+          {
+            reply_markup: Markup.inlineKeyboard([
+              [Markup.button.callback('📅 הצג את השיעורים שלי', 'my_schedule')]
+            ]).reply_markup
+          }
+        );
+        break;
+
+      case 'join_waitlist':
+        ctx.session.step = 'waitlist_request';
+        await ctx.reply(
+          '⏰ <b>הצטרפות לרשימת המתנה</b>\n\nספר לי איזה זמנים אתה מעדיף ואני אוסיף אותך לרשימת המתנה!\n\nדוגמה: "אני רוצה להיות ברשימת המתנה לימי שני אחר הצהריים"',
+          { parse_mode: 'HTML' }
+        );
+        break;
+
+      default:
+        // Low confidence or "other" intent
+        if (aiResult.confidence < 0.5) {
+          await ctx.reply(
+            '🤔 לא הבנתי בדיוק מה אתה רוצה לעשות.\n\nאתה יכול:\n• לתאם שיעור חדש\n• לבדוק את השיעורים שלך\n• לבטל או לשנות שיעור קיים\n• להצטרף לרשימת המתנה\n\nמה תרצה לעשות?',
+            {
+              reply_markup: Markup.inlineKeyboard([
+                [Markup.button.callback('📚 תאם שיעור', 'book_lesson')],
+                [Markup.button.callback('📅 השיעורים שלי', 'my_schedule')],
+                [Markup.button.callback('❓ עזרה', 'help')]
+              ]).reply_markup
+            }
+          );
+        } else {
+          // Use AI generated response if available
+          const responseMessage = aiResult.suggested_responses?.[0] || 
+            'תודה על ההודעה! איך אני יכול לעזור לך עם תיאום השיעורים?';
+          
+          await ctx.reply(responseMessage, {
+            reply_markup: Markup.inlineKeyboard([
+              [Markup.button.callback('📚 תאם שיעור', 'book_lesson')],
+              [Markup.button.callback('📅 השיעורים שלי', 'my_schedule')]
+            ]).reply_markup
+          });
+        }
+        break;
     }
 
   } catch (error) {
-    logger.error('Error handling general message:', error);
-    await ctx.reply('❌ I had trouble understanding your message. Try using the /help command or the menu buttons below.');
-    
-    const helpButtons = Markup.inlineKeyboard([
-      [Markup.button.callback('📚 Book Lesson', 'book_lesson')],
-      [Markup.button.callback('📅 My Schedule', 'my_schedule')],
-      [Markup.button.callback('❓ Help', 'help')]
-    ]);
-
-    await ctx.reply('Here are some things I can help you with:', {
-      reply_markup: helpButtons.reply_markup
-    });
+    logger.error('Error processing general message:', error);
+    await ctx.reply(
+      'נתקלתי בקושי להבין את ההודעה. אתה יכול לנסח אותה שוב או להשתמש בתפריט:',
+      {
+        reply_markup: Markup.inlineKeyboard([
+          [Markup.button.callback('📚 תאם שיעור', 'book_lesson')],
+          [Markup.button.callback('📅 השיעורים שלי', 'my_schedule')],
+          [Markup.button.callback('❓ עזרה', 'help')]
+        ]).reply_markup
+      }
+    );
   }
-};
-
-const showLessonSelection = async (ctx, lessons, action) => {
-  const actionText = action === 'reschedule' ? 'Reschedule' : 'Cancel';
-  let message = `${actionText === 'Cancel' ? '❌' : '🔄'} <b>${actionText} a Lesson</b>\n\nWhich lesson would you like to ${action.toLowerCase()}?\n\n`;
-
-  const buttons = lessons.map((lesson, index) => {
-    const startTime = moment(lesson.start_time).format('ddd, MMM Do [at] h:mm A');
-    message += `${index + 1}. ${startTime} - ${lesson.subject}\n`;
-    
-    return [Markup.button.callback(
-      `${actionText} Lesson ${index + 1}`, 
-      `${action}_lesson_${lesson.id}`
-    )];
-  });
-
-  buttons.push([Markup.button.callback('« Back', 'back_to_menu')]);
-
-  await ctx.reply(message, {
-    parse_mode: 'HTML',
-    reply_markup: Markup.inlineKeyboard(buttons).reply_markup
-  });
 };
 
 const handleFeedback = async (ctx, message, student) => {

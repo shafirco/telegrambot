@@ -4,6 +4,7 @@ const schedulerService = require('../../services/scheduler');
 const { Lesson, Waitlist } = require('../../models');
 const logger = require('../../utils/logger');
 const config = require('../../config/settings');
+const { Op } = require('sequelize');
 
 // Start command - welcome new users
 const start = async (ctx) => {
@@ -59,61 +60,52 @@ const start = async (ctx) => {
   }
 };
 
-// Help command
+// Help command - show available commands and features
 const help = async (ctx) => {
-  try {
-    const helpMessage = `
-🤖 <b>Math Tutoring Bot Help</b>
+  const helpMessage = `
+❓ <b>עזרה - בוט תיאום שיעורי מתמטיקה</b>
 
-<b>📚 Booking Lessons:</b>
-You can book lessons by telling me when you're available in natural language:
+<b>📚 תיאום שיעורים:</b>
+אתה יכול לדבר איתי בשפה טבעית! פשוט תגיד מתי אתה רוצה שיעור:
+• "אני רוצה שיעור מחר בשעה 3"
+• "מתי יש זמנים פנויים השבוע?"
+• "תתאם לי שיעור ביום ראשון אחר הצהריים"
 
-<i>Examples:</i>
-• "I want to book a lesson tomorrow at 3 PM"
-• "Can I schedule something for next Tuesday afternoon?"
-• "I'm free Wednesday after 4"
-• "Book me a lesson this Friday at 2:30"
+<b>🔧 פקודות זמינות:</b>
+/start - התחלת השיחה
+/help - העזרה הזו
+/schedule - הצגת השיעורים שלך
+/status - המצב האישי שלך
+/settings - הגדרות אישיות
 
-<b>📅 Managing Your Schedule:</b>
-• <code>/schedule</code> - View your upcoming lessons
-• <code>/status</code> - Check your account status
-• <code>/cancel</code> - Cancel an upcoming lesson
-• <code>/waitlist</code> - View your waitlist position
+<b>💡 תכונות מתקדמות:</b>
+• 🤖 הבנת שפה טבעית עם AI
+• 📅 סנכרון עם Google Calendar
+• ⏰ רשימת המתנה אוטומטית
+• 🔔 תזכורות ממוקדות
+• 📊 מעקב התקדמות
 
-<b>⚙️ Settings & Preferences:</b>
-• <code>/settings</code> - Update your preferences
-• Set your preferred lesson duration
-• Choose your available days and times
-• Update notification preferences
+<b>📞 יצירת קשר:</b>
+אם אתה נתקל בבעיה, פשוט כתוב לי ואני אעזור!
 
-<b>🎯 Quick Actions:</b>
-• <code>/book</code> - Start booking a lesson
-• <code>/help</code> - Show this help message
+<b>שעות פעילות:</b> ${config.businessHours.start} - ${config.businessHours.end}
+<b>ימי פעילות:</b> ${config.businessHours.days.join(', ')}
+`;
 
-<b>💬 Natural Language:</b>
-I understand natural language, so feel free to type your requests normally! I can understand dates, times, and scheduling preferences in conversational language.
+  const buttons = Markup.inlineKeyboard([
+    [Markup.button.callback('📚 תאם שיעור עכשיו', 'book_lesson')],
+    [
+      Markup.button.callback('📅 השיעורים שלי', 'my_schedule'),
+      Markup.button.callback('⚙️ הגדרות', 'settings')
+    ]
+  ]);
 
-<b>📞 Support:</b>
-If you need help or have questions, just ask me or contact ${config.teacher.name} directly.
-    `;
+  await ctx.reply(helpMessage, {
+    parse_mode: 'HTML',
+    reply_markup: buttons.reply_markup
+  });
 
-    const buttons = Markup.inlineKeyboard([
-      [Markup.button.callback('📚 Book Lesson', 'book_lesson')],
-      [
-        Markup.button.callback('📅 Schedule', 'my_schedule'),
-        Markup.button.callback('⚙️ Settings', 'settings')
-      ]
-    ]);
-
-    await ctx.reply(helpMessage, {
-      parse_mode: 'HTML',
-      reply_markup: buttons.reply_markup
-    });
-
-  } catch (error) {
-    logger.error('Error in help command:', error);
-    await ctx.reply('❌ Sorry, something went wrong. Please try again.');
-  }
+  logger.botLog('help_command', ctx.from.id, ctx.from.username, 'User requested help');
 };
 
 // Book command - start lesson booking
@@ -218,48 +210,71 @@ Would you like to book a lesson?
   }
 };
 
-// Status command - show student status
+// Status command - show user's current status and statistics
 const status = async (ctx) => {
   try {
     const student = ctx.student;
-    const upcomingLessons = await Lesson.findActiveByStudent(student.id);
-    const waitlistEntries = await Waitlist.findByStudent(student.id);
-    const activeWaitlist = waitlistEntries.filter(entry => entry.isActive());
 
-    const statusMessage = `
-📊 <b>Your Account Status</b>
+    // Get upcoming lessons
+    const upcomingLessons = await Lesson.findAll({
+      where: {
+        student_id: student.id,
+        status: {
+          [Op.in]: ['scheduled', 'confirmed']
+        },
+        start_time: {
+          [Op.gte]: new Date()
+        }
+      },
+      order: [['start_time', 'ASC']],
+      limit: 3
+    });
 
-👤 <b>Student Info:</b>
-• Name: ${student.getDisplayName()}
-• Status: ${student.status === 'active' ? '✅ Active' : '❌ Inactive'}
-• Member since: ${moment(student.registration_date).format('MMMM YYYY')}
+    // Get waitlist entries
+    const waitlistEntries = await Waitlist.findAll({
+      where: {
+        student_id: student.id,
+        status: 'active'
+      },
+      order: [['created_at', 'DESC']],
+      limit: 2
+    });
 
-📚 <b>Lesson Statistics:</b>
-• Total Booked: ${student.total_lessons_booked}
-• Completed: ${student.total_lessons_completed}
-• Cancelled: ${student.total_lessons_cancelled}
-• Upcoming: ${upcomingLessons.length}
+    let statusMessage = `👤 <b>המצב שלך - ${student.getDisplayName()}</b>\n\n`;
 
-⏰ <b>Waitlist:</b>
-• Active entries: ${activeWaitlist.length}
-${activeWaitlist.length > 0 ? `• Position: #${activeWaitlist[0].position}` : ''}
+    // Lesson statistics
+    statusMessage += `📊 <b>סטטיסטיקות:</b>\n`;
+    statusMessage += `• סה"כ שיעורים שהוזמנו: ${student.total_lessons_booked}\n`;
+    statusMessage += `• שיעורים שהושלמו: ${student.total_lessons_completed}\n`;
+    statusMessage += `• חברות מתאריך: ${moment(student.created_at).format('DD/MM/YYYY')}\n\n`;
 
-⚙️ <b>Preferences:</b>
-• Lesson Duration: ${student.preferred_lesson_duration || config.lessons.defaultDuration} min
-• Language: ${student.preferred_language}
-• Timezone: ${student.timezone || config.teacher.timezone}
+    // Upcoming lessons
+    if (upcomingLessons.length > 0) {
+      statusMessage += `📅 <b>השיעורים הקרובים שלך:</b>\n`;
+      upcomingLessons.forEach((lesson, index) => {
+        const lessonTime = moment(lesson.start_time).format('dddd, D בMMMM בשעה HH:mm');
+        statusMessage += `${index + 1}. ${lesson.subject} - ${lessonTime}\n`;
+      });
+      statusMessage += '\n';
+    } else {
+      statusMessage += `📅 <b>אין שיעורים מתוכננים</b>\n\n`;
+    }
 
-📱 <b>Last Activity:</b> ${moment(student.last_activity).fromNow()}
-    `;
+    // Waitlist status
+    if (waitlistEntries.length > 0) {
+      statusMessage += `⏰ <b>רשימות המתנה פעילות:</b>\n`;
+      waitlistEntries.forEach((entry, index) => {
+        statusMessage += `${index + 1}. מיקום #${entry.position} - ${entry.request_type || 'זמן גמיש'}\n`;
+      });
+    } else {
+      statusMessage += `⏰ <b>לא ברשימת המתנה כרגע</b>\n`;
+    }
 
     const buttons = Markup.inlineKeyboard([
+      [Markup.button.callback('📚 תאם שיעור חדש', 'book_lesson')],
       [
-        Markup.button.callback('📅 Schedule', 'my_schedule'),
-        Markup.button.callback('📚 Book Lesson', 'book_lesson')
-      ],
-      [
-        Markup.button.callback('⏰ Waitlist', 'view_waitlist'),
-        Markup.button.callback('⚙️ Settings', 'settings')
+        Markup.button.callback('📅 כל השיעורים', 'my_schedule'),
+        Markup.button.callback('⚙️ הגדרות', 'settings')
       ]
     ]);
 
@@ -268,9 +283,11 @@ ${activeWaitlist.length > 0 ? `• Position: #${activeWaitlist[0].position}` : '
       reply_markup: buttons.reply_markup
     });
 
+    logger.botLog('status_command', student.telegram_id, student.username, 'User checked status');
+
   } catch (error) {
     logger.error('Error in status command:', error);
-    await ctx.reply('❌ Sorry, something went wrong. Please try again.');
+    await ctx.reply('❌ סליחה, הייתה שגיאה בהצגת המצב שלך. אנא נסה שוב.');
   }
 };
 

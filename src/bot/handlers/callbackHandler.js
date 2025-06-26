@@ -14,7 +14,7 @@ async function handle(ctx) {
     const student = ctx.student;
     
     if (!student) {
-      await ctx.answerCbQuery('❌ User not found. Please start the bot again.');
+      await ctx.answerCbQuery('❌ המשתמש לא נמצא. אנא הפעל את הבוט מחדש.');
       return;
     }
 
@@ -70,7 +70,7 @@ async function handle(ctx) {
           await handleConfirm(ctx, callbackData, student);
         } else {
           logger.warn('Unknown callback data:', callbackData);
-          await ctx.reply('❓ Unknown action. Please try again.');
+          await ctx.reply('❓ פעולה לא מוכרת. אנא נסה שוב.');
         }
     }
 
@@ -78,8 +78,8 @@ async function handle(ctx) {
     logger.error('Callback handler error:', error);
     
     try {
-      await ctx.answerCbQuery('❌ Something went wrong');
-      await ctx.reply('❌ Sorry, something went wrong. Please try again or use /help for assistance.');
+      await ctx.answerCbQuery('❌ משהו השתבש');
+      await ctx.reply('❌ סליחה, משהו השתבש. אנא נסה שוב או השתמש ב-/help לעזרה.');
     } catch (replyError) {
       logger.error('Failed to send error message:', replyError);
     }
@@ -91,12 +91,12 @@ async function handle(ctx) {
  */
 async function handleBookLesson(ctx, student) {
   await ctx.reply(
-    `📚 <b>Book a Math Lesson</b>\n\nPlease tell me when you'd like to schedule your lesson. You can say things like:\n\n• "I want a lesson tomorrow at 3 PM"\n• "I'm free next Tuesday afternoon"\n• "Book me something this Friday after 4"\n\nJust type your preferred time naturally! 🕐`,
+    `📚 <b>תיאום שיעור מתמטיקה</b>\n\nאנא ספר לי מתי תרצה לתאם את השיעור. אתה יכול לומר דברים כמו:\n\n• "אני רוצה שיעור מחר בשעה 3 אחר הצהריים"\n• "אני פנוי ביום שלישי הבא אחר הצהריים"\n• "תתאם לי משהו ביום שישי אחרי 4"\n\nפשוט כתוב את הזמן המועדף עליך באופן טבעי! 🕐`,
     { 
       parse_mode: 'HTML',
       reply_markup: Markup.inlineKeyboard([
-        [Markup.button.callback('📅 Show Available Times', 'show_available_times')],
-        [Markup.button.callback('⏰ Join Waitlist', 'waitlist_join')]
+        [Markup.button.callback('📅 הצג זמנים זמינים', 'show_available_times')],
+        [Markup.button.callback('⏰ הצטרף לרשימת המתנה', 'waitlist_join')]
       ]).reply_markup
     }
   );
@@ -140,7 +140,7 @@ async function handleSettings(ctx, student) {
  */
 async function handleWaitlistJoin(ctx, student) {
   await ctx.reply(
-    `⏰ <b>Join Waitlist</b>\n\nTell me your preferred time and I'll add you to the waitlist. When a slot becomes available, I'll notify you immediately!\n\nExample: "I want to be on the waitlist for Monday afternoons"`,
+    `⏰ <b>הצטרפות לרשימת המתנה</b>\n\nספר לי את הזמן המועדף עליך ואני אוסיף אותך לרשימת המתנה. כשיתפנה מקום, אני אודיע לך מיד!\n\nדוגמה: "אני רוצה להיות ברשימת המתנה לימי שני אחר הצהריים"`,
     { parse_mode: 'HTML' }
   );
   ctx.session.step = 'waitlist_request';
@@ -159,28 +159,28 @@ async function handleShowAvailableTimes(ctx, student) {
     
     if (availableSlots.length === 0) {
       await ctx.reply(
-        `📅 <b>No Available Times</b>\n\nThere are no available time slots in the next week. Would you like to join the waitlist?`,
+        `📅 <b>אין זמנים זמינים</b>\n\nאין זמנים פנויים בשבוע הקרוב. האם תרצה להצטרף לרשימת המתנה?`,
         {
           parse_mode: 'HTML',
           reply_markup: Markup.inlineKeyboard([
-            [Markup.button.callback('⏰ Join Waitlist', 'waitlist_join')],
-            [Markup.button.callback('« Back', 'back_to_menu')]
+            [Markup.button.callback('⏰ הצטרף לרשימת המתנה', 'waitlist_join')],
+            [Markup.button.callback('« חזור', 'back_to_menu')]
           ]).reply_markup
         }
       );
       return;
     }
     
-    let message = `📅 <b>Available Time Slots</b>\n\nHere are the next available times:\n\n`;
+    let message = `📅 <b>זמנים זמינים</b>\n\nהנה הזמנים הזמינים הבאים:\n\n`;
     const buttons = [];
     
     availableSlots.slice(0, 6).forEach((slot, index) => {
       const slotTime = moment(slot.start).tz(student.timezone || settings.teacher.timezone);
-      message += `${index + 1}. ${slotTime.format('ddd, MMM Do [at] h:mm A')}\n`;
-      buttons.push([Markup.button.callback(`📚 Book Slot ${index + 1}`, `book_slot_${index}`)]);
+      message += `${index + 1}. ${slotTime.format('dddd, D בMMMM בשעה HH:mm')}\n`;
+      buttons.push([Markup.button.callback(`📚 תאם זמן ${index + 1}`, `book_slot_${index}`)]);
     });
     
-    buttons.push([Markup.button.callback('« Back', 'back_to_menu')]);
+    buttons.push([Markup.button.callback('« חזור', 'back_to_menu')]);
     
     await ctx.reply(message, {
       parse_mode: 'HTML',
@@ -189,7 +189,7 @@ async function handleShowAvailableTimes(ctx, student) {
     
   } catch (error) {
     logger.error('Error showing available times:', error);
-    await ctx.reply('❌ Sorry, there was an error loading available times. Please try again.');
+    await ctx.reply('❌ סליחה, הייתה שגיאה בטעינת הזמנים הזמינים. אנא נסה שוב.');
   }
 }
 
@@ -201,7 +201,7 @@ async function handleBookSlot(ctx, callbackData, student) {
     const slotIndex = callbackData.split('_')[2];
     
     await ctx.reply(
-      `✅ <b>Slot Selected!</b>\n\nYou've selected slot ${parseInt(slotIndex) + 1}. I'll now process your booking and send you a confirmation.\n\n⏳ Processing...`,
+      `✅ <b>זמן נבחר!</b>\n\nהזמן ${parseInt(slotIndex) + 1} נבחר. אשמח לעבור על ההזמן ולשלוח לך אימייל מחולל.\n\n⏳ עבור...`,
       { parse_mode: 'HTML' }
     );
     
@@ -209,12 +209,12 @@ async function handleBookSlot(ctx, callbackData, student) {
     setTimeout(async () => {
       try {
         await ctx.reply(
-          `🎉 <b>Lesson Booked Successfully!</b>\n\nYour math lesson has been scheduled. You'll receive detailed confirmation and calendar invite shortly.\n\n📧 Check your notifications for more details.`,
+          `🎉 <b>השיעור נתאם בהצלחה!</b>\n\nהשיעור של מתמטיקה שלך נתאם בהצלחה. אתה תקבל אימייל מפרט מלא והזמנה לשלוח לך מידי.\n\n📧 בדוק את ההתראות שלך לפרטים נוספים.`,
           { 
             parse_mode: 'HTML',
             reply_markup: Markup.inlineKeyboard([
-              [Markup.button.callback('📅 View My Schedule', 'my_schedule')],
-              [Markup.button.callback('🏠 Main Menu', 'back_to_menu')]
+              [Markup.button.callback('📅 הצג את המערכת שלי', 'my_schedule')],
+              [Markup.button.callback('🏠 תפריט ראשי', 'back_to_menu')]
             ]).reply_markup
           }
         );
@@ -230,7 +230,7 @@ async function handleBookSlot(ctx, callbackData, student) {
     
   } catch (error) {
     logger.error('Error in slot booking:', error);
-    await ctx.reply('❌ Sorry, there was an error booking your lesson. Please try again.');
+    await ctx.reply('❌ סליחה, משהו השתבש. אנא נסה שוב.');
   }
 }
 
@@ -242,12 +242,12 @@ async function handleCancelLesson(ctx, callbackData, student) {
     const lessonId = callbackData.split('_')[2];
     
     const buttons = Markup.inlineKeyboard([
-      [Markup.button.callback('✅ Yes, Cancel', `confirm_cancel_${lessonId}`)],
-      [Markup.button.callback('❌ No, Keep Lesson', 'back_to_menu')]
+      [Markup.button.callback('✅ כן, בטל', `confirm_cancel_${lessonId}`)],
+      [Markup.button.callback('❌ לא, שמור את השיעור', 'back_to_menu')]
     ]);
     
     await ctx.reply(
-      `❓ <b>Confirm Cancellation</b>\n\nAre you sure you want to cancel this lesson?\n\n⚠️ Cancellation policy applies.`,
+      `❓ <b>אימת בטלות</b>\n\nהאם אתה בטול שיעור זה?`,
       {
         parse_mode: 'HTML',
         reply_markup: buttons.reply_markup
@@ -256,7 +256,7 @@ async function handleCancelLesson(ctx, callbackData, student) {
     
   } catch (error) {
     logger.error('Error in lesson cancellation:', error);
-    await ctx.reply('❌ Sorry, there was an error. Please try again.');
+    await ctx.reply('❌ סליחה, משהו השתבש. אנא נסה שוב.');
   }
 }
 
@@ -271,7 +271,7 @@ async function handleConfirm(ctx, callbackData, student) {
     
     if (action === 'cancel') {
       await ctx.reply(
-        `✅ <b>Lesson Cancelled</b>\n\nYour lesson has been successfully cancelled. Any applicable refunds will be processed according to our policy.`,
+        `✅ <b>השיעור בוטל</b>\n\nהשיעור שלך נבוטל בהצלחה. כל מזיון מקולקטי יועבר לפי יועמת המדינה.`,
         { parse_mode: 'HTML' }
       );
       
@@ -283,7 +283,7 @@ async function handleConfirm(ctx, callbackData, student) {
     
   } catch (error) {
     logger.error('Error in confirmation:', error);
-    await ctx.reply('❌ Sorry, there was an error. Please try again.');
+    await ctx.reply('❌ סליחה, משהו השתבש. אנא נסה שוב.');
   }
 }
 
@@ -292,19 +292,19 @@ async function handleConfirm(ctx, callbackData, student) {
  */
 async function handleBackToMenu(ctx, student) {
   const buttons = Markup.inlineKeyboard([
-    [Markup.button.callback('📚 Book a Lesson', 'book_lesson')],
+    [Markup.button.callback('📚 הזמן שיעור', 'book_lesson')],
     [
-      Markup.button.callback('📅 My Schedule', 'my_schedule'),
-      Markup.button.callback('📊 Status', 'my_status')
+      Markup.button.callback('📅 את המערכת שלי', 'my_schedule'),
+      Markup.button.callback('📊 מצב', 'my_status')
     ],
     [
-      Markup.button.callback('⚙️ Settings', 'settings'),
-      Markup.button.callback('❓ Help', 'help')
+      Markup.button.callback('⚙️ הגדרות', 'settings'),
+      Markup.button.callback('❓ עזרה', 'help')
     ]
   ]);
 
   await ctx.reply(
-    `🎓 <b>Math Tutoring Bot</b>\n\nHi ${student.getDisplayName()}! What would you like to do?`,
+    `🎓 <b>בוט מתמטיקה</b>\n\nהיי ${student.getDisplayName()}! מה תרצה לעשות?`,
     {
       parse_mode: 'HTML',
       reply_markup: buttons.reply_markup

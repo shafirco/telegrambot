@@ -17,12 +17,13 @@ const settings = {
 
   // Lesson Settings
   lessons: {
-    defaultDuration: parseInt(process.env.DEFAULT_LESSON_DURATION) || 60, // minutes
-    bufferTime: 15, // minutes between lessons
-    maxAdvanceBooking: parseInt(process.env.BOOKING_ADVANCE_DAYS) || 30, // days
+    defaultDuration: 60, // minutes
+    defaultPrice: 150, // per hour in local currency
     minAdvanceBooking: 2, // hours
-    allowWeekends: false,
-    allowHolidays: false
+    maxAdvanceBooking: 30, // days
+    bufferTime: 15, // minutes between lessons
+    maxReschedules: 3, // per lesson
+    cancellationWindowHours: 24 // hours before lesson start
   },
 
   // Waitlist Configuration
