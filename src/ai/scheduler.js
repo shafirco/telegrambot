@@ -80,9 +80,9 @@ class AIScheduler {
 
 חובה לענות רק בעברית ולא להשתמש באנגלית כלל!
 
-אזור זמן מורה: ${settings.teacher.timezone}
-שעות עבודה: ${settings.businessHours.start} - ${settings.businessHours.end}
-ימי עבודה: ${settings.businessHours.days.join(', ')}
+אזור זמן מורה: Asia/Jerusalem
+שעות עבודה: 10:00 - 18:00
+ימי עבודה: ראשון, שני, שלישי, רביעי, חמישי
 
 עליך לנתח את הבקשה ולזהות:
 - כוונה (intent): book_lesson, cancel_lesson, reschedule_lesson, check_availability, join_waitlist, other
@@ -91,29 +91,29 @@ class AIScheduler {
 - פרטי השיעור
 
 חזור תמיד JSON תקני בפורמט הזה בדיוק:
-{
-  "intent": "...",
+{{
+  "intent": "book_lesson",
   "confidence": 0.8,
   "datetime_preferences": [
-    {
+    {{
       "datetime": "2025-06-27T14:00:00",
       "date": "2025-06-27",
       "time": "14:00",
       "flexibility": "preferred",
       "duration_minutes": 60
-    }
+    }}
   ],
-  "lesson_details": {
+  "lesson_details": {{
     "subject": "מתמטיקה",
     "lesson_type": "regular"
-  },
+  }},
   "urgency": "medium",
   "reasoning": "התלמיד מבקש לתאם שיעור מחר בשעה 2",
   "suggested_responses": [
     "אבדוק עבורך זמנים זמינים מחר אחר הצהריים",
-    "איזה נושב בספציפי ברצונך להתמקד?"
+    "איזה נושא בספציפי ברצונך להתמקד?"
   ]
-}
+}}
 
 חובה להחזיר JSON תקני בלבד ללא טקסט נוסף!`],
       ['human', `הודעת התלמיד: {user_message}
