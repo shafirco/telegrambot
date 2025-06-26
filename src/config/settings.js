@@ -98,7 +98,19 @@ const settings = {
 // Helper functions
 settings.isBusinessDay = (date) => {
   const dayName = moment(date).format('dddd').toLowerCase();
-  return settings.businessHours.days.includes(dayName);
+  const englishToHebrewDays = {
+    'sunday': 'ראשון',
+    'monday': 'שני', 
+    'tuesday': 'שלישי',
+    'wednesday': 'רביעי',
+    'thursday': 'חמישי',
+    'friday': 'שישי',
+    'saturday': 'שבת'
+  };
+  
+  // Check both English and Hebrew day names
+  const businessDays = settings.businessHours.days.map(day => day.toLowerCase());
+  return businessDays.includes(dayName) || businessDays.includes(englishToHebrewDays[dayName]);
 };
 
 settings.isBusinessHour = (date) => {

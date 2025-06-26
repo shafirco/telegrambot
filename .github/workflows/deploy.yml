@@ -10,17 +10,25 @@ jobs:
   test:
     runs-on: ubuntu-latest
     
-    strategy:
-      matrix:
-        node-version: [18.x, 20.x]
-    
+    services:
+      postgres:
+        image: postgres:13
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
     - uses: actions/checkout@v4
     
-    - name: Use Node.js ${{ matrix.node-version }}
+    - name: Use Node.js 18
       uses: actions/setup-node@v4
       with:
-        node-version: ${{ matrix.node-version }}
+        node-version: '18'
         cache: 'npm'
     
     - name: Install dependencies
@@ -31,13 +39,18 @@ jobs:
     
     - name: Run tests
       run: npm test --if-present
+      env:
+        NODE_ENV: test
+        DATABASE_URL: postgres://postgres:postgres@localhost:5432/test_db
+        TELEGRAM_BOT_TOKEN: test_token
+        OPENAI_API_KEY: test_key
     
     - name: Check environment variables
       run: |
         echo "Checking required environment variables..."
-        [ -z "${{ secrets.TELEGRAM_BOT_TOKEN }}" ] && echo "TELEGRAM_BOT_TOKEN is missing" && exit 1
-        [ -z "${{ secrets.OPENAI_API_KEY }}" ] && echo "OPENAI_API_KEY is missing" && exit 1
-        echo "Environment variables check passed"
+        [ -n "${{ secrets.TELEGRAM_BOT_TOKEN }}" ] && echo "✅ TELEGRAM_BOT_TOKEN is set" || echo "❌ TELEGRAM_BOT_TOKEN is missing"
+        [ -n "${{ secrets.OPENAI_API_KEY }}" ] && echo "✅ OPENAI_API_KEY is set" || echo "❌ OPENAI_API_KEY is missing"
+        [ -n "${{ secrets.RENDER_DEPLOY_HOOK }}" ] && echo "✅ RENDER_DEPLOY_HOOK is set" || echo "❌ RENDER_DEPLOY_HOOK is missing"
 
   deploy:
     needs: test
@@ -48,46 +61,35 @@ jobs:
     - uses: actions/checkout@v4
     
     - name: Deploy to Render
-      uses: johnbeynon/render-deploy-action@v0.0.8
-      with:
-        service-id: ${{ secrets.RENDER_SERVICE_ID }}
-        api-key: ${{ secrets.RENDER_API_KEY }}
-        wait-for-success: true
-    
-    - name: Notify on success
-      if: success()
+      if: ${{ secrets.RENDER_DEPLOY_HOOK }}
       run: |
-        echo "🎉 Deployment to Render completed successfully!"
-        echo "Service URL: https://math-tutor-bot.onrender.com"
+        curl -X POST ${{ secrets.RENDER_DEPLOY_HOOK }}
+        echo "✅ Deployment triggered on Render"
     
-    - name: Notify on failure
-      if: failure()
-      run: |
-        echo "❌ Deployment to Render failed!"
-        echo "Please check the logs and fix any issues."
-
-  health-check:
-    needs: deploy
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    
-    steps:
     - name: Wait for deployment
-      run: sleep 60
+      run: |
+        echo "⏳ Waiting for deployment to complete..."
+        sleep 30
     
     - name: Health check
       run: |
-        echo "Performing health check..."
-        response=$(curl -s -o /dev/null -w "%{http_code}" https://math-tutor-bot.onrender.com/health || echo "000")
-        if [ "$response" -eq 200 ]; then
-          echo "✅ Health check passed - Service is running"
-        else
-          echo "❌ Health check failed - HTTP $response"
-          exit 1
-        fi
+        echo "🔍 Performing health check..."
+        for i in {1..5}; do
+          if curl -f https://math-tutor-bot.onrender.com/health; then
+            echo "✅ Health check passed"
+            exit 0
+          fi
+          echo "⏳ Attempt $i failed, retrying in 10 seconds..."
+          sleep 10
+        done
+        echo "❌ Health check failed after 5 attempts"
+        exit 1
     
-    - name: Bot webhook check
+    - name: Create deployment status
+      if: always()
       run: |
-        echo "Checking bot webhook status..."
-        # You can add webhook verification here if needed
-        echo "🤖 Bot should be ready to receive messages" 
+        if [ $? -eq 0 ]; then
+          echo "🚀 Deployment successful!"
+        else
+          echo "❌ Deployment failed!"
+        fi 

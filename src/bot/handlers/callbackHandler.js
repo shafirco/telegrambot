@@ -60,6 +60,22 @@ async function handle(ctx) {
         await handleBackToMenu(ctx, student);
         break;
         
+      case 'settings_done':
+        await handleSettingsDone(ctx, student);
+        break;
+        
+      case 'set_language':
+        await handleSetLanguage(ctx, student);
+        break;
+        
+      case 'view_waitlist':
+        await handleViewWaitlist(ctx, student);
+        break;
+        
+      case 'book_different_time':
+        await handleBookDifferentTime(ctx, student);
+        break;
+        
       default:
         // Handle complex callback data (with parameters)
         if (callbackData.startsWith('book_slot_')) {
@@ -310,6 +326,101 @@ async function handleBackToMenu(ctx, student) {
       reply_markup: buttons.reply_markup
     }
   );
+}
+
+/**
+ * Handle settings done callback
+ */
+async function handleSettingsDone(ctx, student) {
+  await ctx.reply(
+    `✅ <b>הגדרות נשמרו</b>\n\nההגדרות שלך נשמרו בהצלחה!`,
+    { 
+      parse_mode: 'HTML',
+      reply_markup: Markup.inlineKeyboard([
+        [Markup.button.callback('📚 תאם שיעור', 'book_lesson')],
+        [Markup.button.callback('📅 הלוח שלי', 'my_schedule'), Markup.button.callback('📊 סטטוס', 'my_status')],
+        [Markup.button.callback('❓ עזרה', 'help')]
+      ]).reply_markup
+    }
+  );
+}
+
+/**
+ * Handle set language callback
+ */
+async function handleSetLanguage(ctx, student) {
+  await ctx.reply(
+    `🌐 <b>בחירת שפה</b>\n\nהבוט פועל כרגע בעברית. תכונת שינוי שפה תהיה זמינה בקרוב.`,
+    { 
+      parse_mode: 'HTML',
+      reply_markup: Markup.inlineKeyboard([
+        [Markup.button.callback('« חזור להגדרות', 'settings')]
+      ]).reply_markup
+    }
+  );
+}
+
+/**
+ * Handle view waitlist callback
+ */
+async function handleViewWaitlist(ctx, student) {
+  try {
+    const waitlistEntries = await Waitlist.findAll({
+      where: { student_id: student.id, status: 'active' },
+      order: [['created_at', 'DESC']]
+    });
+
+    if (waitlistEntries.length === 0) {
+      await ctx.reply(
+        `⏰ <b>רשימת המתנה</b>\n\nאינך ברשימת המתנה כרגע.`,
+        {
+          parse_mode: 'HTML',
+          reply_markup: Markup.inlineKeyboard([
+            [Markup.button.callback('⏰ הצטרף לרשימת המתנה', 'waitlist_join')],
+            [Markup.button.callback('« חזור', 'back_to_menu')]
+          ]).reply_markup
+        }
+      );
+      return;
+    }
+
+    let message = `⏰ <b>רשימת המתנה שלך</b>\n\n`;
+    waitlistEntries.forEach((entry, index) => {
+      const preferredTime = entry.preferred_start_time 
+        ? moment(entry.preferred_start_time).format('dddd, D בMMMM בשעה HH:mm')
+        : 'זמן גמיש';
+      message += `${index + 1}. ${preferredTime}\n   מיקום ברשימה: ${entry.position || 'טרם נקבע'}\n\n`;
+    });
+
+    await ctx.reply(message, {
+      parse_mode: 'HTML',
+      reply_markup: Markup.inlineKeyboard([
+        [Markup.button.callback('« חזור', 'back_to_menu')]
+      ]).reply_markup
+    });
+
+  } catch (error) {
+    logger.error('Error viewing waitlist:', error);
+    await ctx.reply('❌ שגיאה בטעינת רשימת המתנה. אנא נסה שוב.');
+  }
+}
+
+/**
+ * Handle book different time callback
+ */
+async function handleBookDifferentTime(ctx, student) {
+  await ctx.reply(
+    `🔍 <b>בחירת זמן אחר</b>\n\nאנא ספר לי את הזמן המועדף עליך. אתה יכול לומר דברים כמו:\n\n• "אני רוצה שיעור ביום רביעי הבא בשעה 5"\n• "איזה זמנים פנויים יש בסוף השבוע?"\n• "תתאם לי משהו השבוע הבא אחר הצהריים"\n\nפשוט כתוב את בקשתך באופן טבעי! 🕐`,
+    { 
+      parse_mode: 'HTML',
+      reply_markup: Markup.inlineKeyboard([
+        [Markup.button.callback('📅 הצג זמנים זמינים', 'show_available_times')],
+        [Markup.button.callback('⏰ הצטרף לרשימת המתנה', 'waitlist_join')],
+        [Markup.button.callback('« חזור', 'back_to_menu')]
+      ]).reply_markup
+    }
+  );
+  ctx.session.step = 'booking_request';
 }
 
 module.exports = {

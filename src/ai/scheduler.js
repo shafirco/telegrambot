@@ -14,12 +14,12 @@ const SchedulingRequestSchema = z.object({
   intent: z.enum(['book_lesson', 'reschedule_lesson', 'cancel_lesson', 'check_availability', 'join_waitlist', 'other']),
   confidence: z.number().min(0).max(1),
   datetime_preferences: z.array(z.object({
-    date: z.string().optional(),
-    time: z.string().optional(),
-    datetime: z.string().optional(),
+    date: z.string().nullable().optional(),
+    time: z.string().nullable().optional(),
+    datetime: z.string().nullable().optional(),
     flexibility: z.enum(['exact', 'preferred', 'flexible']).default('preferred'),
     duration_minutes: z.number().optional()
-  })).optional(),
+  })).default([]),
   lesson_details: z.object({
     subject: z.string().optional(),
     topic: z.string().optional(),
@@ -65,7 +65,7 @@ class AIScheduler {
 
   setupPromptTemplate() {
     this.promptTemplate = ChatPromptTemplate.fromMessages([
-      ['system', `אתה עוזר תיאום שיעורים AI עבור מורה מתמטיקה פרטי. המשימה שלך היא להבין בקשות תיאום בשפה טבעית ולהמיר אותן לנתונים מובנים.
+      ['system', `אתה עוזר תיאום שיעורים AI עבור מורה מתמטיקה פרטי. המשימה שלך היא להבין בקשות תיאום בעברית ובאנגלית ולהמיר אותן לנתונים מובנים.
 
 הקשר נוכחי:
 - אזור זמן מורה: ${settings.teacher.timezone}
@@ -74,15 +74,14 @@ class AIScheduler {
 - משך שיעור ברירת מחדל: ${settings.lessons.defaultDuration} דקות
 - תאריך/שעה נוכחיים: {current_datetime}
 
-הנחיות:
+הנחיות חשובות:
 1. נתח את הודעת המשתמש כדי להבין את כוונת התיאום שלו
-2. חלץ העדפות תאריך/שעה באמצעות הבנת שפה טבעית
-3. זהה פרטי שיעור (נושא, רמת קושי וכו')
-4. קבע דחיפות וגמישות
-5. ספק ציון ביטחון לפרשנות שלך
-6. הצע תגובות מועילות אם נדרש הבהרה
-
-פורמט תגובה: החזר JSON תקין בהתאם לסכמה בדיוק. אל תכלול טקסט מחוץ ל-JSON.
+2. חלץ העדפות תאריך/שעה - אם אין תאריך/שעה ספציפיים, השאר את המערך ריק
+3. אם יש תאריך/שעה, ודא שהם מחרוזות תקינות (לא null)
+4. זהה פרטי שיעור (נושא, רמת קושי וכו')
+5. קבע דחיפות וגמישות
+6. ספק ציון ביטחון לפרשנות שלך
+7. כתוב reasoning בעברית
 
 כוונות זמינות:
 - book_lesson: המשתמש רוצה לתאם שיעור חדש
@@ -92,12 +91,9 @@ class AIScheduler {
 - join_waitlist: המשתמש רוצה להצטרף לרשימת המתנה
 - other: ההודעה לא קשורה לתיאום
 
-רמות גמישות:
-- exact: המשתמש ציין תאריך/שעה מדויקים (למשל "יום שני בשעה 3")
-- preferred: למשתמש יש העדפות אבל גמישות מסוימת (למשל "מתישהו אחר הצהריים של יום שני")
-- flexible: המשתמש גמיש מאוד (למשל "מתי שמתאים השבוע")
+חשוב: החזר רק JSON תקין. אל תכלול date או time או datetime כ-null - אם אין תאריך ספציפי, השאר datetime_preferences כמערך ריק.
 
-דוגמה לתגובת JSON תקינה:
+דוגמה לתגובת JSON תקינה (עם תאריך ספציפי):
 {{
   "intent": "book_lesson",
   "confidence": 0.9,
@@ -116,8 +112,20 @@ class AIScheduler {
   }},
   "urgency": "medium",
   "reasoning": "המשתמש ביקש בבירור לתאם שיעור מתמטיקה ב-15 בינואר בשעה 15:00 לעזרה באלגברה."
+}}
+
+דוגמה לתגובת JSON תקינה (בלי תאריך ספציפי):
+{{
+  "intent": "check_availability",
+  "confidence": 0.95,
+  "datetime_preferences": [],
+  "lesson_details": {{
+    "subject": "math"
+  }},
+  "urgency": "medium",
+  "reasoning": "המשתמש שואל על זמינות כללית ללא זמן ספציפי."
 }}`],
-      ['human', 'הודעת תלמיד: "{user_message}"\n\nפרופיל תלמיד:\n- שם: {student_name}\n- אזור זמן: {student_timezone}\n- משך מועדף: {preferred_duration} דקות\n- שיעורים אחרונים: {recent_lessons}\n\nאנא נתח את ההודעה והחזר נתוני תיאום מובנים כ-JSON.']
+      ['human', 'הודעת תלמיד: "{user_message}"\n\nפרופיל תלמיד:\n- שם: {student_name}\n- אזור זמן: {student_timezone}\n- משך מועדף: {preferred_duration} דקות\n- שיעורים אחרונים: {recent_lessons}\n\nאנא נתח את ההודעה והחזר נתוני תיאום מובנים כ-JSON תקין.']
     ]);
   }
 
@@ -226,24 +234,27 @@ class AIScheduler {
   fallbackParsing(userMessage, studentProfile) {
     logger.info('Using fallback parsing for message:', userMessage);
 
-    // Simple keyword-based intent detection
+    // Simple keyword-based intent detection for Hebrew and English
     const message = userMessage.toLowerCase();
     let intent = 'other';
     let confidence = 0.3;
 
-    if (message.includes('book') || message.includes('schedule') || message.includes('lesson')) {
+    // Hebrew keywords
+    if (message.includes('תאם') || message.includes('שיעור') || message.includes('לתאם') || 
+        message.includes('book') || message.includes('schedule') || message.includes('lesson')) {
       intent = 'book_lesson';
       confidence = 0.6;
-    } else if (message.includes('cancel')) {
+    } else if (message.includes('ביטול') || message.includes('לבטל') || message.includes('cancel')) {
       intent = 'cancel_lesson';
       confidence = 0.7;
-    } else if (message.includes('reschedule') || message.includes('change')) {
+    } else if (message.includes('לשנות') || message.includes('להעביר') || message.includes('reschedule') || message.includes('change')) {
       intent = 'reschedule_lesson';
       confidence = 0.7;
-    } else if (message.includes('available') || message.includes('free')) {
+    } else if (message.includes('זמינים') || message.includes('פנוי') || message.includes('זמנים') || 
+               message.includes('available') || message.includes('free')) {
       intent = 'check_availability';
       confidence = 0.6;
-    } else if (message.includes('wait') || message.includes('list')) {
+    } else if (message.includes('המתנה') || message.includes('רשימה') || message.includes('wait') || message.includes('list')) {
       intent = 'join_waitlist';
       confidence = 0.6;
     }
@@ -261,16 +272,16 @@ class AIScheduler {
     return {
       intent,
       confidence,
-      datetime_preferences: datetime_preferences.length > 0 ? datetime_preferences : undefined,
+      datetime_preferences: datetime_preferences.length > 0 ? datetime_preferences : [],
       lesson_details: {
         subject: 'math',
         lesson_type: 'regular'
       },
       urgency: 'medium',
-      reasoning: 'Fallback parsing used due to AI processing error',
+      reasoning: 'פירוש חלופי בשל שגיאה בעיבוד AI',
       suggested_responses: [
-        'Could you please specify when you\'d like to schedule your lesson?',
-        'What date and time work best for you?'
+        'האם תוכל לציין מתי תרצה לתאם את השיעור?',
+        'איזה תאריך ושעה מתאימים לך?'
       ]
     };
   }
@@ -278,26 +289,27 @@ class AIScheduler {
   async generateResponse(schedulingData, availableSlots = [], studentName = '') {
     try {
       const responsePrompt = ChatPromptTemplate.fromMessages([
-        ['system', `You are a friendly math tutor's scheduling assistant. Generate a helpful response to the student based on their scheduling request and available options.
+        ['system', `אתה עוזר תיאום שיעורים ידידותי של מורה מתמטיקה. צור תגובה מועילה לתלמיד בהתבסס על בקשת התיאום שלו והאפשרויות הזמינות.
 
-Guidelines:
-- Be warm and professional
-- Address the student by name when provided
-- Clearly explain available options
-- Ask for clarification when needed
-- Suggest alternatives when preferred times aren't available
-- Use emojis sparingly but appropriately
-- Keep responses concise but informative
+הנחיות:
+- תמיד השב בעברית
+- היה חם ומקצועי
+- פנה לתלמיד בשמו כשמסופק
+- הסבר בבירור את האפשרויות הזמינות
+- בקש הבהרה כשצריך
+- הצע חלופות כשהזמנים המועדפים לא זמינים
+- השתמש באימוג'ים במידה והם מתאימים
+- שמור על תגובות קצרות אך מידעיות
 
-Current context:
-- Teacher timezone: ${settings.teacher.timezone}
-- Business hours: ${settings.businessHours.start} - ${settings.businessHours.end}
-- Working days: ${settings.businessHours.days.join(', ')}`],
-        ['human', `Scheduling analysis: {scheduling_data}
-Available time slots: {available_slots}
-Student name: {student_name}
+הקשר נוכחי:
+- אזור זמן מורה: ${settings.teacher.timezone}
+- שעות פעילות: ${settings.businessHours.start} - ${settings.businessHours.end}
+- ימי עבודה: ${settings.businessHours.days.join(', ')}`],
+        ['human', `ניתוח תיאום: {scheduling_data}
+זמנים זמינים: {available_slots}
+שם התלמיד: {student_name}
 
-Generate an appropriate response message.`]
+צור הודעת תגובה מתאימה בעברית.`]
       ]);
 
       const responseChain = responsePrompt
@@ -317,12 +329,12 @@ Generate an appropriate response message.`]
     } catch (error) {
       logger.error('Error generating AI response:', error);
       
-      // Fallback response
+      // Fallback response in Hebrew
       if (schedulingData.intent === 'book_lesson') {
-        return `Hello${studentName ? ` ${studentName}` : ''}! I'd be happy to help you schedule a lesson. Let me check what times are available and get back to you shortly. 📚`;
+        return `שלום${studentName ? ` ${studentName}` : ''}! אשמח לעזור לך לתאם שיעור. תן לי לבדוק איזה זמנים זמינים ואחזור אליך בקרוב. 📚`;
       }
       
-      return `Hello${studentName ? ` ${studentName}` : ''}! I received your message about scheduling. Let me process your request and provide you with the best available options. 🕐`;
+      return `שלום${studentName ? ` ${studentName}` : ''}! קיבלתי את ההודעה שלך לגבי תיאום השיעור. תן לי לעבד את הבקשה ולתת לך את האפשרויות הטובות ביותר. 🕐`;
     }
   }
 

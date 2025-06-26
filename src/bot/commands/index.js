@@ -353,54 +353,35 @@ When your preferred times aren't available, I can add you to the waitlist and no
 
 // Settings command
 const settings = async (ctx) => {
-  try {
-    const student = ctx.student;
+  const student = ctx.student;
+  
+  const settingsText = `⚙️ <b>הגדרות</b>
 
-    const settingsMessage = `
-⚙️ <b>Your Settings</b>
+📊 <b>הפרופיל שלך:</b>
+👤 שם: ${student.first_name} ${student.last_name || ''}
+📧 אימייל: ${student.email || 'לא הוגדר'}
+📱 טלפון: ${student.phone || 'לא הוגדר'}
+🕐 אזור זמן: ${student.timezone || 'ברירת מחדל'}
+⏱️ משך שיעור מועדף: ${student.preferred_lesson_duration || 60} דקות
 
-📚 <b>Lesson Preferences:</b>
-• Duration: ${student.preferred_lesson_duration || config.lessons.defaultDuration} minutes
-• Days: ${student.preferred_days?.join(', ') || 'Weekdays'}
-• Time Range: ${student.preferred_time_start || '16:00'} - ${student.preferred_time_end || '19:00'}
+📚 <b>העדפות שיעור:</b>
+📅 ימים מועדפים: ${student.preferred_days || 'גמיש'}
+🕒 שעות מועדפות: ${student.preferred_time_start || '09:00'} - ${student.preferred_time_end || '18:00'}
 
-🌍 <b>Personal:</b>
-• Language: ${student.preferred_language || 'English'}
-• Timezone: ${student.timezone || config.teacher.timezone}
+💳 <b>מידע תשלום:</b>
+💰 מחיר לשעה: ₪${config.lessons.defaultPrice}
+📊 סה"כ שיעורים: ${student.total_lessons || 0}
+✅ שיעורים שהושלמו: ${student.completed_lessons || 0}`;
 
-🔔 <b>Notifications:</b>
-• Reminders: ${student.notification_preferences?.lesson_reminders !== false ? '✅' : '❌'}
-• Waitlist Updates: ${student.notification_preferences?.waitlist_updates !== false ? '✅' : '❌'}
-• Schedule Changes: ${student.notification_preferences?.schedule_changes !== false ? '✅' : '❌'}
-
-Click below to update any setting:
-    `;
-
-    const buttons = Markup.inlineKeyboard([
-      [
-        Markup.button.callback('⏱️ Duration', 'set_duration'),
-        Markup.button.callback('📅 Days', 'set_days')
-      ],
-      [
-        Markup.button.callback('🕐 Time Range', 'set_time_range'),
-        Markup.button.callback('🌍 Timezone', 'set_timezone')
-      ],
-      [
-        Markup.button.callback('🔔 Notifications', 'set_notifications'),
-        Markup.button.callback('🌐 Language', 'set_language')
-      ],
-      [Markup.button.callback('✅ Done', 'settings_done')]
-    ]);
-
-    await ctx.reply(settingsMessage, {
-      parse_mode: 'HTML',
-      reply_markup: buttons.reply_markup
-    });
-
-  } catch (error) {
-    logger.error('Error in settings command:', error);
-    await ctx.reply('❌ Sorry, something went wrong. Please try again.');
-  }
+  await ctx.reply(settingsText, {
+    parse_mode: 'HTML',
+    reply_markup: Markup.inlineKeyboard([
+      [Markup.button.callback('📝 עדכן פרטים', 'update_profile')],
+      [Markup.button.callback('🌐 שפה', 'set_language')],
+      [Markup.button.callback('📞 צור קשר', 'contact_teacher')],
+      [Markup.button.callback('✅ סיום', 'settings_done')]
+    ]).reply_markup
+  });
 };
 
 // Cancel command

@@ -2,6 +2,8 @@ const schedulerService = require('../../services/scheduler');
 const aiScheduler = require('../../ai/scheduler');
 const { Markup } = require('telegraf');
 const logger = require('../../utils/logger');
+const moment = require('moment-timezone');
+const settings = require('../../config/settings');
 
 const handleText = async (ctx) => {
   try {

@@ -140,19 +140,23 @@ class SchedulerService {
       
       // Skip if not a business day
       if (!settings.isBusinessDay(searchMoment.toDate())) {
+        logger.info(`Skipping ${searchDate} - not a business day`);
         return [];
       }
 
       // Create time slots every 30 minutes during business hours
-      const startHour = parseInt(settings.businessHours.start.split(':')[0]);
-      const startMinute = parseInt(settings.businessHours.start.split(':')[1]);
-      const endHour = parseInt(settings.businessHours.end.split(':')[0]);
-      const endMinute = parseInt(settings.businessHours.end.split(':')[1]);
+      const [startHour, startMinute] = settings.businessHours.start.split(':').map(Number);
+      const [endHour, endMinute] = settings.businessHours.end.split(':').map(Number);
 
-      let currentSlot = searchMoment.clone().set({ hour: startHour, minute: startMinute, second: 0 });
-      const endTime = searchMoment.clone().set({ hour: endHour, minute: endMinute, second: 0 });
+      let currentSlot = searchMoment.clone().set({ hour: startHour, minute: startMinute, second: 0, millisecond: 0 });
+      const endTime = searchMoment.clone().set({ hour: endHour, minute: endMinute, second: 0, millisecond: 0 });
 
-      while (currentSlot.isBefore(endTime.subtract(durationMinutes, 'minutes'))) {
+      // Ensure we're not looking too far into the end time
+      const lastPossibleStart = endTime.clone().subtract(durationMinutes, 'minutes');
+      
+      logger.info(`Searching for slots on ${searchDate} from ${currentSlot.format('HH:mm')} to ${lastPossibleStart.format('HH:mm')}`);
+
+      while (currentSlot.isSameOrBefore(lastPossibleStart)) {
         const slotEnd = currentSlot.clone().add(durationMinutes, 'minutes');
         
         // Check if this slot is in the future (at least 2 hours from now)
@@ -176,14 +180,23 @@ class SchedulerService {
                 formattedTime: currentSlot.format('dddd, D בMMMM בשעה HH:mm'),
                 pricePerHour: settings.lessons.defaultPrice || 100
               });
+              
+              logger.info(`Added available slot: ${currentSlot.format('YYYY-MM-DD HH:mm')}`);
+            } else {
+              logger.info(`Teacher unavailable at: ${currentSlot.format('YYYY-MM-DD HH:mm')}`);
             }
+          } else {
+            logger.info(`Conflict found at: ${currentSlot.format('YYYY-MM-DD HH:mm')}`);
           }
+        } else {
+          logger.info(`Slot too soon (${hoursUntilSlot}h): ${currentSlot.format('YYYY-MM-DD HH:mm')}`);
         }
         
         // Move to next 30-minute slot
         currentSlot.add(30, 'minutes');
       }
 
+      logger.info(`Found ${availableSlots.length} available slots for ${searchDate}`);
       return availableSlots;
 
     } catch (error) {
