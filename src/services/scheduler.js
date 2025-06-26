@@ -906,22 +906,41 @@ class SchedulerService {
   }
 
   /**
-   * Check if teacher is available at a specific time (simplified for performance)
+   * Check if teacher is available at a specific time (checks database availability)
    */
   async checkTeacherAvailability(startTime, durationMinutes = 60) {
     try {
       const startMoment = moment(startTime).tz(settings.teacher.timezone);
       const endMoment = startMoment.clone().add(durationMinutes, 'minutes');
       
-      // Quick basic checks first
-      if (!settings.isBusinessHour(startTime) || !settings.isBusinessDay(startTime)) {
+      // Get day of week in English (as expected by database)
+      const dayOfWeek = startMoment.format('dddd').toLowerCase(); // e.g., 'sunday', 'monday'
+      const timeSlot = startMoment.format('HH:mm:ss');
+      
+      // Check TeacherAvailability in database
+      const availability = await TeacherAvailability.findOne({
+        where: {
+          schedule_type: 'recurring',
+          day_of_week: dayOfWeek,
+          start_time: {
+            [Op.lte]: timeSlot
+          },
+          end_time: {
+            [Op.gte]: endMoment.format('HH:mm:ss')
+          },
+          is_available: true,
+          status: 'active'
+        }
+      });
+
+      if (!availability) {
         return {
           available: false,
           reason: 'מחוץ לשעות הפעילות'
         };
       }
 
-      // Simple check for existing lessons (most common conflict)
+      // Check for existing lesson conflicts
       const conflictingLessons = await Lesson.count({
         where: {
           start_time: {
@@ -943,22 +962,20 @@ class SchedulerService {
         };
       }
 
-      // Basic availability - if no conflicts and in business hours, it's available
       return {
         available: true,
         startTime: startMoment.toDate(),
         endTime: endMoment.toDate(),
-        duration: durationMinutes
+        duration: durationMinutes,
+        availability
       };
 
     } catch (error) {
       logger.error('Error checking teacher availability:', error);
-      // If there's an error, assume available to prevent blocking
+      // If there's an error, assume not available to be safe
       return {
-        available: true,
-        startTime: moment(startTime).toDate(),
-        endTime: moment(startTime).add(durationMinutes, 'minutes').toDate(),
-        duration: durationMinutes
+        available: false,
+        reason: 'שגיאה בבדיקת זמינות'
       };
     }
   }
