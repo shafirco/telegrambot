@@ -20,49 +20,53 @@ class SchedulerService {
    */
   async processBookingRequest(userMessage, student, conversationContext = {}) {
     try {
-      logger.scheduleLog('processing_request', {
-        studentId: student.id,
-        message: userMessage.substring(0, 100)
-      });
+      logger.info('Processing booking request:', userMessage);
 
-      // Get student's recent lessons for context
-      const recentLessons = await Lesson.findActiveByStudent(student.id);
-      
-      const studentProfile = {
+      // Create AI scheduler if not exists
+      if (!this.aiScheduler) {
+        const AIScheduler = require('../ai/scheduler');
+        this.aiScheduler = new AIScheduler();
+      }
+
+      // Process with AI
+      const schedulingData = await this.aiScheduler.processSchedulingRequest(userMessage, {
         id: student.id,
         name: student.getDisplayName(),
-        timezone: student.timezone,
-        preferredDuration: student.preferred_lesson_duration,
-        recentLessons: recentLessons.slice(0, 3) // Last 3 lessons for context
-      };
+        timezone: student.timezone || settings.teacher.timezone,
+        preferredDuration: student.preferred_lesson_duration || settings.lessons.defaultDuration,
+        recentLessons: conversationContext.recentLessons || []
+      });
 
-      // Use AI to understand the request
-      const schedulingData = await aiScheduler.processSchedulingRequest(userMessage, studentProfile);
+      logger.scheduleLog('ai_result', userMessage, JSON.stringify(schedulingData), {
+        intent: schedulingData.intent,
+        confidence: schedulingData.confidence
+      });
 
-      // Process based on intent
+      // Route to appropriate handler
       switch (schedulingData.intent) {
         case 'book_lesson':
           return await this.handleBookingRequest(schedulingData, student);
-        
-        case 'check_availability':
-          return await this.handleAvailabilityCheck(schedulingData, student);
-        
         case 'reschedule_lesson':
           return await this.handleRescheduleRequest(schedulingData, student);
-        
         case 'cancel_lesson':
           return await this.handleCancellationRequest(schedulingData, student);
-        
+        case 'check_availability':
+          return await this.handleAvailabilityCheck(schedulingData, student);
         case 'join_waitlist':
           return await this.handleWaitlistRequest(schedulingData, student);
-        
         default:
           return await this.handleOtherRequest(schedulingData, student);
       }
 
     } catch (error) {
       logger.error('Error processing booking request:', error);
-      throw new Error('Unable to process your scheduling request. Please try again or contact support.');
+      
+      // Fallback response in Hebrew
+      return {
+        success: false,
+        message: `שלום ${student.getDisplayName()}! מצטער, הייתה בעיה בעיבוד הבקשה שלך. אנא נסה שוב או צור קשר ישירות.\n\nבברכה,\nשפיר.`,
+        requiresFollowUp: true
+      };
     }
   }
 
@@ -128,7 +132,7 @@ class SchedulerService {
         searchTime = momentTime.format('HH:mm');
       } else if (preference.date) {
         searchDate = preference.date;
-        searchTime = preference.time || '09:00';
+        searchTime = preference.time || '10:00';
       } else {
         // No specific date - search next available
         return await this.findNextAvailableSlots(durationMinutes, 7); // Next 7 days
@@ -156,11 +160,15 @@ class SchedulerService {
       
       logger.info(`Searching for slots on ${searchDate} from ${currentSlot.format('HH:mm')} to ${lastPossibleStart.format('HH:mm')}`);
 
+      // Get current time in teacher's timezone
+      const nowInTeacherTz = moment().tz(settings.teacher.timezone);
+
       while (currentSlot.isSameOrBefore(lastPossibleStart)) {
         const slotEnd = currentSlot.clone().add(durationMinutes, 'minutes');
         
         // Check if this slot is in the future (at least 30 minutes from now)
-        const minutesUntilSlot = currentSlot.diff(moment(), 'minutes');
+        const minutesUntilSlot = currentSlot.diff(nowInTeacherTz, 'minutes');
+        
         if (minutesUntilSlot >= 30) {
           
           // Check for conflicts with existing lessons
@@ -246,11 +254,36 @@ class SchedulerService {
   }
 
   /**
+   * Static methods for external access
+   */
+  static getHebrewDayName(dayNumber) {
+    return new SchedulerService().getHebrewDayName(dayNumber);
+  }
+
+  static getHebrewMonthName(monthNumber) {
+    return new SchedulerService().getHebrewMonthName(monthNumber);
+  }
+
+  /**
    * Find next available slots across multiple days
    */
   async findNextAvailableSlots(durationMinutes = 60, daysAhead = 14) {
     const availableSlots = [];
-    const startDate = moment().tz(settings.teacher.timezone);
+    const nowInTeacherTz = moment().tz(settings.teacher.timezone);
+    
+    // Start from tomorrow if we're past business hours today
+    const startDate = nowInTeacherTz.clone();
+    const businessEndToday = nowInTeacherTz.clone().set({
+      hour: parseInt(settings.businessHours.end.split(':')[0]),
+      minute: parseInt(settings.businessHours.end.split(':')[1]),
+      second: 0,
+      millisecond: 0
+    });
+    
+    // If current time is after business hours, start from tomorrow
+    if (nowInTeacherTz.isAfter(businessEndToday.clone().subtract(60, 'minutes'))) {
+      startDate.add(1, 'day');
+    }
     
     for (let i = 0; i < daysAhead; i++) {
       const checkDate = startDate.clone().add(i, 'days');

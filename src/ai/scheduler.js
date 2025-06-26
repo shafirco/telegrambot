@@ -74,74 +74,52 @@ class AIScheduler {
 
   setupPromptTemplate() {
     this.promptTemplate = ChatPromptTemplate.fromMessages([
-      ['system', `אתה עוזר תיאום שיעורים AI עבור המורה שפיר ללמידת מתמטיקה. 
+      ['system', `אתה מערכת AI לתיאום שיעורי מתמטיקה של המורה שפיר.
 
-חשוב מאוד: ענה רק ואך ורק בעברית! אל תענה באנגלית בשום מקרה!
+התפקיד שלך הוא לנתח בקשות תיאום מתלמידים ולהחזיר תגובה JSON תקנית בעברית בלבד.
 
-המשימה שלך היא להבין בקשות תיאום ולהמיר אותן לנתונים מובנים.
+חובה לענות רק בעברית ולא להשתמש באנגלית כלל!
 
-הקשר נוכחי:
-- המורה: שפיר
-- אזור זמן: ${settings.teacher.timezone}
-- שעות פעילות: ${settings.businessHours.start} - ${settings.businessHours.end}
-- ימי עבודה: ${settings.businessHours.days.join(', ')}
-- משך שיעור ברירת מחדל: ${settings.lessons.defaultDuration} דקות
-- תאריך/שעה נוכחיים: {current_datetime}
+אזור זמן מורה: ${settings.teacher.timezone}
+שעות עבודה: ${settings.businessHours.start} - ${settings.businessHours.end}
+ימי עבודה: ${settings.businessHours.days.join(', ')}
 
-הנחיות חשובות:
-1. ענה תמיד בעברית בלבד!
-2. נתח את הודעת המשתמש כדי להבין את כוונת התיאום שלו
-3. חלץ העדפות תאריך/שעה - אם אין תאריך/שעה ספציפיים, השאר את המערך ריק
-4. אם יש תאריך/שעה, ודא שהם מחרוזות תקינות (לא null)
-5. זהה פרטי שיעור (נושא, רמת קושי וכו')
-6. קבע דחיפות וגמישות
-7. ספק ציון ביטחון לפרשנות שלך
-8. כתוב reasoning בעברית בלבד
-9. חתום תמיד עם "בברכה, שפיר."
+עליך לנתח את הבקשה ולזהות:
+- כוונה (intent): book_lesson, cancel_lesson, reschedule_lesson, check_availability, join_waitlist, other
+- רמת ביטחון (confidence): 0.0-1.0
+- העדפות תאריך ושעה אם נמצאו
+- פרטי השיעור
 
-כוונות זמינות:
-- book_lesson: המשתמש רוצה לתאם שיעור חדש
-- reschedule_lesson: המשתמש רוצה לשנות זמן שיעור קיים
-- cancel_lesson: המשתמש רוצה לבטל שיעור
-- check_availability: המשתמש שואל על זמנים זמינים
-- join_waitlist: המשתמש רוצה להצטרף לרשימת המתנה
-- other: ההודעה לא קשורה לתיאום
-
-חשוב: החזר רק JSON תקין. אל תכלול date או time או datetime כ-null - אם אין תאריך ספציפי, השאר datetime_preferences כמערך ריק.
-
-דוגמה לתגובת JSON תקינה (עם תאריך ספציפי):
-{{
-  "intent": "book_lesson",
-  "confidence": 0.9,
+חזור תמיד JSON תקני בפורמט הזה בדיוק:
+{
+  "intent": "...",
+  "confidence": 0.8,
   "datetime_preferences": [
-    {{
-      "date": "2024-01-15",
-      "time": "15:00",
-      "flexibility": "exact",
+    {
+      "datetime": "2025-06-27T14:00:00",
+      "date": "2025-06-27",
+      "time": "14:00",
+      "flexibility": "preferred",
       "duration_minutes": 60
-    }}
+    }
   ],
-  "lesson_details": {{
-    "subject": "math",
-    "topic": "algebra",
-    "difficulty": "intermediate"
-  }},
+  "lesson_details": {
+    "subject": "מתמטיקה",
+    "lesson_type": "regular"
+  },
   "urgency": "medium",
-  "reasoning": "המשתמש ביקש בבירור לתאם שיעור מתמטיקה ב-15 בינואר בשעה 15:00 לעזרה באלגברה."
-}}
+  "reasoning": "התלמיד מבקש לתאם שיעור מחר בשעה 2",
+  "suggested_responses": [
+    "אבדוק עבורך זמנים זמינים מחר אחר הצהריים",
+    "איזה נושב בספציפי ברצונך להתמקד?"
+  ]
+}
 
-דוגמה לתגובת JSON תקינה (בלי תאריך ספציפי):
-{{
-  "intent": "check_availability",
-  "confidence": 0.95,
-  "datetime_preferences": [],
-  "lesson_details": {{
-    "subject": "math"
-  }},
-  "urgency": "medium",
-  "reasoning": "המשתמש שואל על זמינות כללית ללא זמן ספציפי."
-}}`],
-      ['human', 'הודעת תלמיד: "{user_message}"\n\nפרופיל תלמיד:\n- שם: {student_name}\n- אזור זמן: {student_timezone}\n- משך מועדף: {preferred_duration} דקות\n- שיעורים אחרונים: {recent_lessons}\n\nאנא נתח את ההודעה והחזר נתוני תיאום מובנים כ-JSON תקין. זכור: ענה רק בעברית!']
+חובה להחזיר JSON תקני בלבד ללא טקסט נוסף!`],
+      ['human', `הודעת התלמיד: {user_message}
+קונטקסט: {context}
+
+נא לנתח ולהחזיר JSON תקני בעברית בלבד:`]
     ]);
   }
 
@@ -153,65 +131,85 @@ class AIScheduler {
 
   async processSchedulingRequest(userMessage, studentProfile = {}) {
     try {
-      logger.aiLog('processing_request', userMessage.substring(0, 100), null, {
-        studentId: studentProfile.id
-      });
-
-      // If AI is not initialized, use fallback parsing
-      if (!this.initialized) {
-        console.log('AI not available, using fallback parsing');
+      if (!this.llm) {
+        logger.warn('OpenAI not available, using fallback parsing');
         return this.fallbackParsing(userMessage, studentProfile);
       }
 
-      // Prepare context
-      const currentDatetime = moment().tz(settings.teacher.timezone).format('YYYY-MM-DD HH:mm:ss');
-      const recentLessons = studentProfile.recentLessons || [];
-      
-      // Invoke the AI chain
-      const response = await this.chain.invoke({
-        current_datetime: currentDatetime,
-        user_message: userMessage,
-        student_name: studentProfile.name || 'Unknown',
-        student_timezone: studentProfile.timezone || settings.teacher.timezone,
-        preferred_duration: studentProfile.preferredDuration || settings.lessons.defaultDuration,
-        recent_lessons: recentLessons.map(lesson => 
-          `${lesson.subject} on ${moment(lesson.start_time).format('YYYY-MM-DD HH:mm')}`
-        ).join(', ') || 'None'
-      });
+      // Prepare the prompt with student context
+      const contextPrompt = `
+שם התלמיד: ${studentProfile.name || 'לא ידוע'}
+אזור זמן: ${studentProfile.timezone || settings.teacher.timezone}
+העדפות אורך שיעור: ${studentProfile.preferredDuration || settings.lessons.defaultDuration} דקות
 
-      // Parse JSON response
+הודעת התלמיד: "${userMessage}"
+
+נא לנתח את הבקשה וליצור תגובה JSON תקנית בעברית בלבד.
+`;
+
+      logger.aiLog('processing_request', userMessage, 'undefined', { studentId: studentProfile.id });
+
+      // Use chain to process the request
+      const response = await Promise.race([
+        this.chain.invoke({
+          user_message: userMessage,
+          context: contextPrompt
+        }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('AI timeout')), 10000))
+      ]);
+
+      // Parse JSON response with better error handling
       let parsedResponse;
       try {
-        // Clean the response (remove any markdown formatting)
-        const cleanResponse = response.replace(/```json\n?|\n?```/g, '').trim();
-        parsedResponse = JSON.parse(cleanResponse);
+        // Clean the response more thoroughly
+        const cleanResponse = response
+          .replace(/```json\n?|\n?```/g, '')
+          .replace(/```\n?|\n?```/g, '')
+          .replace(/^\s*[\r\n]+|[\r\n]+\s*$/g, '')
+          .trim();
+        
+        // Find JSON object within the response
+        const jsonMatch = cleanResponse.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          parsedResponse = JSON.parse(jsonMatch[0]);
+        } else {
+          throw new Error('No JSON object found in response');
+        }
       } catch (parseError) {
         logger.error('Failed to parse AI response as JSON:', parseError);
         logger.error('Raw AI response:', response);
-        throw new Error('AI returned invalid JSON response');
+        
+        // Use fallback instead of throwing error
+        logger.info('Using fallback parsing due to JSON error');
+        return this.fallbackParsing(userMessage, studentProfile);
       }
 
-      // Validate against schema
-      const validatedResponse = SchedulingRequestSchema.parse(parsedResponse);
+      // Validate and enhance the response
+      if (!parsedResponse.intent) {
+        parsedResponse.intent = 'other';
+      }
+      if (!parsedResponse.confidence) {
+        parsedResponse.confidence = 0.5;
+      }
 
       // Post-process datetime preferences
-      if (validatedResponse.datetime_preferences) {
-        validatedResponse.datetime_preferences = validatedResponse.datetime_preferences.map(pref => 
+      if (parsedResponse.datetime_preferences) {
+        parsedResponse.datetime_preferences = parsedResponse.datetime_preferences.map(pref => 
           this.enhanceDatetimePreference(pref, userMessage, studentProfile.timezone)
         );
       }
 
-      logger.aiLog('request_processed', userMessage.substring(0, 100), JSON.stringify(validatedResponse), {
-        intent: validatedResponse.intent,
-        confidence: validatedResponse.confidence
+      logger.aiLog('request_processed', userMessage.substring(0, 100), JSON.stringify(parsedResponse), {
+        intent: parsedResponse.intent,
+        confidence: parsedResponse.confidence
       });
 
-      return validatedResponse;
+      return parsedResponse;
 
     } catch (error) {
       logger.error('Error processing scheduling request:', error);
       
-      // Fallback to basic parsing
+      // Always fallback to basic parsing on any error
       return this.fallbackParsing(userMessage, studentProfile);
     }
   }

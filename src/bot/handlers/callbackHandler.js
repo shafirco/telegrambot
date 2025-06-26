@@ -258,45 +258,82 @@ async function handleWaitlistJoin(ctx, student) {
  */
 async function handleShowAvailableTimes(ctx, student) {
   try {
-    // Get next available slots
-    const availableSlots = await schedulerService.findNextAvailableSlots(
-      student.preferred_lesson_duration || settings.lessons.defaultDuration,
-      7 // Next 7 days
+    // Show loading message first
+    await ctx.editMessageText(
+      '⏳ <b>טוען זמנים זמינים...</b>\n\nאנא המתן, מחפש עבורך את הזמנים הפנויים הקרובים.',
+      { parse_mode: 'HTML' }
     );
+
+    // Get next available slots with shorter timeout
+    const availableSlots = await Promise.race([
+      schedulerService.findNextAvailableSlots(
+        student.preferred_lesson_duration || settings.lessons.defaultDuration,
+        7 // Next 7 days
+      ),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 15000))
+    ]);
     
     if (availableSlots.length === 0) {
-      await ctx.reply(
-        `📅 <b>אין זמנים זמינים</b>\n\nאין זמנים פנויים בשבוע הקרוב. האם תרצה להצטרף לרשימת המתנה?`,
+      await ctx.editMessageText(
+        `📅 <b>אין זמנים זמינים</b>\n\nמצטער, אין זמנים פנויים בשבוע הקרוב.\n\nהאם תרצה להצטרף לרשימת המתנה? 📋\n\nבברכה,\nשפיר.`,
         {
           parse_mode: 'HTML',
           reply_markup: Markup.inlineKeyboard([
             [Markup.button.callback('⏰ הצטרף לרשימת המתנה', 'waitlist_join')],
-            [Markup.button.callback('« חזור', 'back_to_menu')]
+            [Markup.button.callback('« חזור לתפריט', 'back_to_menu')]
           ]).reply_markup
         }
       );
       return;
     }
     
-    let message = `📅 <b>זמנים זמינים</b>\n\nהנה הזמנים הזמינים הבאים:\n\n`;
+    let message = `📅 <b>זמנים זמינים לשיעור</b>\n\nהנה הזמנים הפנויים הקרובים ביותר:\n\n`;
     const buttons = [];
     
     availableSlots.slice(0, 6).forEach((slot, index) => {
       const slotTime = moment(slot.start).tz(student.timezone || settings.teacher.timezone);
-      message += `${index + 1}. ${slotTime.format('dddd, D בMMMM בשעה HH:mm')}\n`;
+      const dayName = schedulerService.constructor.getHebrewDayName(slotTime.day());
+      const monthName = schedulerService.constructor.getHebrewMonthName(slotTime.month());
+      
+      message += `${index + 1}. ${dayName}, ${slotTime.date()} ב${monthName} בשעה ${slotTime.format('HH:mm')}\n`;
+      
+      // Store slot data for later use
+      ctx.session = ctx.session || {};
+      ctx.session.availableSlots = ctx.session.availableSlots || [];
+      ctx.session.availableSlots[index] = slot;
+      
       buttons.push([Markup.button.callback(`📚 תאם זמן ${index + 1}`, `book_slot_${index}`)]);
     });
     
-    buttons.push([Markup.button.callback('« חזור', 'back_to_menu')]);
+    message += `\n💰 מחיר שיעור: ${settings.lessons.defaultPrice || 100}₪\n⏱️ אורך שיעור: ${student.preferred_lesson_duration || settings.lessons.defaultDuration} דקות\n\nבברכה,\nשפיר.`;
     
-    await ctx.reply(message, {
+    buttons.push([Markup.button.callback('« חזור לתפריט', 'back_to_menu')]);
+    
+    await ctx.editMessageText(message, {
       parse_mode: 'HTML',
       reply_markup: Markup.inlineKeyboard(buttons).reply_markup
     });
     
   } catch (error) {
     logger.error('Error showing available times:', error);
-    await ctx.reply('❌ סליחה, הייתה שגיאה בטעינת הזמנים הזמינים. אנא נסה שוב.');
+    
+    try {
+      await ctx.editMessageText(
+        '❌ <b>שגיאה בטעינת זמנים</b>\n\nמצטער, הייתה שגיאה בטעינת הזמנים הזמינים.\nאנא נסה שוב מאוחר יותר או צור קשר ישירות.\n\nבברכה,\nשפיר.',
+        {
+          parse_mode: 'HTML',
+          reply_markup: Markup.inlineKeyboard([
+            [Markup.button.callback('🔄 נסה שוב', 'show_available_times')],
+            [Markup.button.callback('« חזור לתפריט', 'back_to_menu')]
+          ]).reply_markup
+        }
+      );
+    } catch (editError) {
+      // If we can't edit, send a new message
+      await ctx.reply(
+        '❌ מצטער, הייתה שגיאה בטעינת הזמנים. אנא נסה שוב או כתב לי ישירות מתי תרצה לתאם.\n\nבברכה,\nשפיר.'
+      );
+    }
   }
 }
 
@@ -305,39 +342,76 @@ async function handleShowAvailableTimes(ctx, student) {
  */
 async function handleBookSlot(ctx, callbackData, student) {
   try {
-    const slotIndex = callbackData.split('_')[2];
+    const slotIndex = parseInt(callbackData.split('_')[2]);
     
-    await ctx.reply(
-      `✅ <b>זמן נבחר!</b>\n\nהזמן ${parseInt(slotIndex) + 1} נבחר. אשמח לעבור על ההזמן ולשלוח לך אימייל מחולל.\n\n⏳ עבור...`,
+    // Get the slot from session
+    if (!ctx.session?.availableSlots || !ctx.session.availableSlots[slotIndex]) {
+      await ctx.reply('❌ מצטער, המידע על הזמן נמחק. אנא בחר זמן שוב.');
+      return;
+    }
+    
+    const selectedSlot = ctx.session.availableSlots[slotIndex];
+    
+    await ctx.editMessageText(
+      `⏳ <b>מתאם את השיעור...</b>\n\nמתאם עבורך את השיעור, אנא המתן.`,
       { parse_mode: 'HTML' }
     );
     
-    // Here you would implement the actual booking logic
-    setTimeout(async () => {
-      try {
-        await ctx.reply(
-          `🎉 <b>השיעור נתאם בהצלחה!</b>\n\nהשיעור של מתמטיקה שלך נתאם בהצלחה. אתה תקבל אימייל מפרט מלא והזמנה לשלוח לך מידי.\n\n📧 בדוק את ההתראות שלך לפרטים נוספים.`,
+    try {
+      // Book the actual lesson
+      const bookingResult = await schedulerService.bookTimeSlot(
+        selectedSlot,
+        student,
+        {
+          subject: 'מתמטיקה',
+          lesson_type: 'regular',
+          difficulty_level: 'intermediate'
+        }
+      );
+      
+      if (bookingResult.success) {
+        const slotTime = moment(selectedSlot.start).tz(student.timezone || settings.teacher.timezone);
+        const dayName = schedulerService.constructor.getHebrewDayName(slotTime.day());
+        const monthName = schedulerService.constructor.getHebrewMonthName(slotTime.month());
+        
+        await ctx.editMessageText(
+          `🎉 <b>השיעור נתאם בהצלחה!</b>\n\n📅 תאריך: ${dayName}, ${slotTime.date()} ב${monthName}\n⏰ שעה: ${slotTime.format('HH:mm')}\n⏱️ אורך: ${selectedSlot.duration} דקות\n💰 מחיר: ${settings.lessons.defaultPrice || 100}₪\n\n📧 תקבל תזכורת לפני השיעור!\n🗓️ השיעור נוסף ליומן Google שלי.\n\nמצפה לראותך! 📚\n\nבברכה,\nשפיר.`,
           { 
             parse_mode: 'HTML',
             reply_markup: Markup.inlineKeyboard([
-              [Markup.button.callback('📅 הצג את המערכת שלי', 'my_schedule')],
+              [Markup.button.callback('📅 הצג את הלוח שלי', 'my_schedule')],
               [Markup.button.callback('🏠 תפריט ראשי', 'back_to_menu')]
             ]).reply_markup
           }
         );
-      } catch (error) {
-        logger.error('Error sending booking confirmation:', error);
+        
+        // Clear the session data
+        if (ctx.session) {
+          delete ctx.session.availableSlots;
+        }
+        
+      } else {
+        throw new Error(bookingResult.message || 'Booking failed');
       }
-    }, 2000);
-    
-    logger.info('Lesson booked via callback', { 
-      studentId: student.id, 
-      slotIndex 
-    });
+      
+    } catch (bookingError) {
+      logger.error('Error booking lesson:', bookingError);
+      
+      await ctx.editMessageText(
+        `❌ <b>שגיאה בתיאום השיעור</b>\n\nמצטער, הייתה בעיה בתיאום השיעור.\nייתכן שהזמן נתפס בינתיים.\n\nאנא נסה לבחור זמן אחר או צור קשר ישירות.\n\nבברכה,\nשפיר.`,
+        {
+          parse_mode: 'HTML',
+          reply_markup: Markup.inlineKeyboard([
+            [Markup.button.callback('📅 בחר זמן אחר', 'show_available_times')],
+            [Markup.button.callback('🏠 תפריט ראשי', 'back_to_menu')]
+          ]).reply_markup
+        }
+      );
+    }
     
   } catch (error) {
     logger.error('Error in slot booking:', error);
-    await ctx.reply('❌ סליחה, משהו השתבש. אנא נסה שוב.');
+    await ctx.reply('❌ מצטער, משהו השתבש. אנא נסה שוב.\n\nבברכה,\nשפיר.');
   }
 }
 
