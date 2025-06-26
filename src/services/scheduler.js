@@ -189,7 +189,7 @@ class SchedulerService {
                 date: currentSlot.format('YYYY-MM-DD'),
                 time: currentSlot.format('HH:mm'),
                 formattedTime: `${dayName}, ${currentSlot.date()} ב${monthName} בשעה ${currentSlot.format('HH:mm')}`,
-                pricePerHour: settings.lessons.defaultPrice || 100
+                pricePerHour: settings.lessons.defaultPrice || 180
               });
               
               logger.info(`Added available slot: ${currentSlot.format('YYYY-MM-DD HH:mm')}`);
@@ -319,6 +319,8 @@ class SchedulerService {
         duration: slotDetails.duration
       });
 
+      logger.info(`Creating lesson for student ${student.id} at ${slotDetails.start}`);
+
       // Create lesson record
       const lesson = await Lesson.create({
         student_id: student.id,
@@ -335,10 +337,14 @@ class SchedulerService {
         location: lessonDetails.location || 'אונליין'
       });
 
+      logger.info(`Lesson created successfully with ID: ${lesson.id}`);
+
       // Create Google Calendar event with proper timezone
       try {
         const startMoment = moment(slotDetails.start).tz(settings.teacher.timezone);
         const endMoment = moment(slotDetails.end).tz(settings.teacher.timezone);
+        
+        logger.info(`Creating calendar event for ${startMoment.format()} to ${endMoment.format()}`);
         
         const calendarEvent = await calendarService.createEvent({
           summary: `שיעור מתמטיקה - ${student.getDisplayName()}`,
@@ -372,6 +378,7 @@ class SchedulerService {
       // Update student statistics
       try {
         await student.increment('total_lessons_booked');
+        logger.info(`Updated student stats for ${student.id}`);
       } catch (statsError) {
         logger.warn('Failed to update student stats:', statsError);
       }
@@ -379,6 +386,7 @@ class SchedulerService {
       // Send notification
       try {
         await notificationService.sendLessonConfirmation(student, lesson);
+        logger.info(`Notification sent for lesson ${lesson.id}`);
       } catch (notificationError) {
         logger.warn('Failed to send notification:', notificationError);
       }
@@ -392,6 +400,8 @@ class SchedulerService {
       const slotTime = moment(slotDetails.start).tz(student.timezone || settings.teacher.timezone);
       const dayName = this.getHebrewDayName(slotTime.day());
       const monthName = this.getHebrewMonthName(slotTime.month());
+
+      logger.info(`Lesson booking completed successfully: ${lesson.id}`);
 
       return {
         success: true,

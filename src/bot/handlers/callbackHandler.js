@@ -98,6 +98,10 @@ async function handle(ctx) {
           await handleWaitlistDay(ctx, student);
         } else if (callbackData.startsWith('waitlist_time_')) {
           await handleWaitlistTime(ctx, student);
+        } else if (callbackData.startsWith('select_day_')) {
+          await handleSelectDay(ctx, callbackData, student);
+        } else if (callbackData.startsWith('select_time_')) {
+          await handleSelectTime(ctx, callbackData, student);
         } else {
           logger.warn('Unknown callback data:', callbackData);
           await ctx.reply('❓ פעולה לא מוכרת. אנא נסה שוב.');
@@ -267,93 +271,76 @@ async function handleShowAvailableTimes(ctx, student) {
   try {
     // Show loading message first
     await ctx.editMessageText(
-      '⏳ <b>טוען זמנים זמינים...</b>\n\nאנא המתן, מחפש עבורך את כל הזמנים הפנויים ב-7 הימים הקרובים.',
+      '⏳ <b>טוען זמנים זמינים...</b>\n\nאנא המתן, מחפש עבורך את כל הזמנים הפנויים.',
       { parse_mode: 'HTML' }
     );
 
-    // Get ALL available slots for 7 days
-    const availableSlots = await Promise.race([
-      schedulerService.findNextAvailableSlots(
-        student.preferred_lesson_duration || settings.lessons.defaultDuration,
-        7 // Next 7 days
-      ),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 8000))
-    ]);
+    // Get next 7 days only
+    const availableDays = [];
+    const startDate = moment().tz(settings.teacher.timezone);
     
-    if (availableSlots.length === 0) {
+    // Check each of the next 7 days for availability
+    for (let i = 0; i < 7; i++) {
+      const checkDate = startDate.clone().add(i, 'days');
+      
+      // Skip non-business days
+      if (!settings.isBusinessDay(checkDate.toDate())) {
+        continue;
+      }
+      
+      // Quick check if this day has any availability
+      const testSlots = await schedulerService.findAvailableSlots(
+        { date: checkDate.format('YYYY-MM-DD') },
+        student.preferred_lesson_duration || settings.lessons.defaultDuration
+      );
+      
+      if (testSlots.length > 0) {
+        const dayName = schedulerService.constructor.getHebrewDayName(checkDate.day());
+        const monthName = schedulerService.constructor.getHebrewMonthName(checkDate.month());
+        
+        availableDays.push({
+          date: checkDate.format('YYYY-MM-DD'),
+          dayName,
+          monthName,
+          dayNumber: checkDate.date(),
+          slotsCount: testSlots.length
+        });
+      }
+    }
+    
+    if (availableDays.length === 0) {
       await ctx.editMessageText(
-        `📅 <b>אין זמנים זמינים</b>\n\nמצטער, אין זמנים פנויים ב-7 הימים הקרובים.\n\nתוכל לכתוב לי מתי תרצה לתאם והצטרף לרשימת המתנה.\n\nבברכה,\nשפיר.`,
+        `📅 <b>אין זמנים זמינים</b>\n\nמצטער, אין זמנים פנויים השבוע הקרוב.\n\nתוכל לכתוב לי מתי תרצה לתאם והצטרף לרשימת המתנה.\n\nבברכה,\nשפיר.`,
         {
           parse_mode: 'HTML',
           reply_markup: Markup.inlineKeyboard([
-            [Markup.button.callback('« חזור לתפריט', 'back_to_menu')]
+            [Markup.button.callback('🏠 תפריט ראשי', 'back_to_menu')]
           ]).reply_markup
         }
       );
       return;
     }
     
-    // Group slots by day for better display
-    const slotsByDay = {};
-    availableSlots.forEach(slot => {
-      const slotTime = moment(slot.start).tz(student.timezone || settings.teacher.timezone);
-      const dateKey = slotTime.format('YYYY-MM-DD');
-      const dayName = schedulerService.constructor.getHebrewDayName(slotTime.day());
-      const monthName = schedulerService.constructor.getHebrewMonthName(slotTime.month());
-      
-      if (!slotsByDay[dateKey]) {
-        slotsByDay[dateKey] = {
-          dayName,
-          monthName,
-          date: slotTime.date(),
-          slots: []
-        };
-      }
-      slotsByDay[dateKey].slots.push(slot);
-    });
-
-    let message = `📅 <b>כל הזמנים הזמינים (7 ימים)</b>\n\n`;
-    const buttons = [];
-    let slotIndex = 0;
+    // Create day selection buttons
+    let message = `📅 <b>בחר יום לשיעור</b>\n\nימים זמינים השבוע הקרוב:\n\n`;
+    const dayButtons = [];
     
-    // Display all slots grouped by day
-    Object.keys(slotsByDay).forEach(dateKey => {
-      const dayData = slotsByDay[dateKey];
-      message += `📆 <b>${dayData.dayName}, ${dayData.date} ב${dayData.monthName}</b>\n`;
-      
-      dayData.slots.forEach(slot => {
-        const slotTime = moment(slot.start).tz(student.timezone || settings.teacher.timezone);
-        message += `   ${slotIndex + 1}. ${slotTime.format('HH:mm')}\n`;
-        
-        // Store slot data for later use
-        ctx.session = ctx.session || {};
-        ctx.session.availableSlots = ctx.session.availableSlots || [];
-        ctx.session.availableSlots[slotIndex] = slot;
-        
-        if (slotIndex < 20) { // Limit to 20 buttons due to Telegram restrictions
-          buttons.push([Markup.button.callback(`📚 ${slotIndex + 1}. ${dayData.dayName} ${slotTime.format('HH:mm')}`, `book_slot_${slotIndex}`)]);
-        }
-        
-        slotIndex++;
-      });
-      
-      message += '\n';
+    availableDays.forEach((day, index) => {
+      message += `📆 ${day.dayName}, ${day.dayNumber} ב${day.monthName} - ${day.slotsCount} זמנים\n`;
+      dayButtons.push([Markup.button.callback(
+        `📅 ${day.dayName}, ${day.dayNumber} ב${day.monthName}`,
+        `select_day_${day.date}`
+      )]);
     });
     
-    message += `💰 מחיר שיעור: ${settings.lessons.defaultPrice || 180}₪\n⏱️ אורך שיעור: ${student.preferred_lesson_duration || settings.lessons.defaultDuration} דקות\n\nבחר זמן מהרשימה או כתוב לי ישירות! 😊\n\nבברכה,\nשפיר.`;
-    
-    // Add buttons in chunks to avoid telegram limits
-    const buttonChunks = [];
-    for (let i = 0; i < buttons.length; i += 2) {
-      buttonChunks.push(buttons.slice(i, i + 2));
-    }
+    message += `\n💰 מחיר שיעור: ${settings.lessons.defaultPrice || 180}₪\n⏱️ אורך שיעור: ${student.preferred_lesson_duration || settings.lessons.defaultDuration} דקות\n\nבחר יום והמשך לבחירת שעה! 😊\n\nבברכה,\nשפיר.`;
     
     // Add navigation buttons
-    buttonChunks.push([Markup.button.callback('« חזור לתפריט', 'back_to_menu')]);
+    dayButtons.push([Markup.button.callback('🏠 תפריט ראשי', 'back_to_menu')]);
     
     await ctx.editMessageText(message, {
       parse_mode: 'HTML',
-      reply_markup: Markup.inlineKeyboard(buttonChunks).reply_markup
+      reply_markup: Markup.inlineKeyboard(dayButtons).reply_markup
     });
     
   } catch (error) {
@@ -366,7 +353,7 @@ async function handleShowAvailableTimes(ctx, student) {
           parse_mode: 'HTML',
           reply_markup: Markup.inlineKeyboard([
             [Markup.button.callback('🔄 נסה שוב', 'show_available_times')],
-            [Markup.button.callback('« חזור לתפריט', 'back_to_menu')]
+            [Markup.button.callback('🏠 תפריט ראשי', 'back_to_menu')]
           ]).reply_markup
         }
       );
@@ -516,22 +503,33 @@ async function handleBackToMenu(ctx, student) {
   const buttons = Markup.inlineKeyboard([
     [Markup.button.callback('📚 הזמן שיעור', 'book_lesson')],
     [
-      Markup.button.callback('📅 את המערכת שלי', 'my_schedule'),
-      Markup.button.callback('📊 מצב', 'my_status')
+      Markup.button.callback('📅 הלוח שלי', 'my_schedule'),
+      Markup.button.callback('📊 המצב שלי', 'my_status')
     ],
     [
-      Markup.button.callback('⚙️ הגדרות', 'settings'),
-      Markup.button.callback('❓ עזרה', 'help')
+      Markup.button.callback('❓ עזרה', 'help'),
+      Markup.button.callback('⚙️ הגדרות', 'settings')
     ]
   ]);
 
-  await ctx.reply(
-    `🎓 <b>בוט מתמטיקה</b>\n\nהיי ${student.getDisplayName()}! מה תרצה לעשות?`,
-    {
-      parse_mode: 'HTML',
-      reply_markup: buttons.reply_markup
-    }
-  );
+  try {
+    await ctx.editMessageText(
+      `🏠 <b>תפריט ראשי</b>\n\nשלום ${student.getDisplayName()}! 👋\n\nמה תרצה לעשות?\n\nבברכה,\nשפיר.`,
+      {
+        parse_mode: 'HTML',
+        reply_markup: buttons.reply_markup
+      }
+    );
+  } catch (error) {
+    // If edit fails, send new message
+    await ctx.reply(
+      `🏠 <b>תפריט ראשי</b>\n\nשלום ${student.getDisplayName()}! 👋\n\nמה תרצה לעשות?\n\nבברכה,\nשפיר.`,
+      {
+        parse_mode: 'HTML',
+        reply_markup: buttons.reply_markup
+      }
+    );
+  }
 }
 
 /**
@@ -815,15 +813,190 @@ async function handleUpdateProfile(ctx, student) {
  * Handle contact teacher callback
  */
 async function handleContactTeacher(ctx, student) {
-  await ctx.reply(
-    `📞 <b>יצירת קשר עם שפיר</b>\n\nאתה יכול ליצור קשר איתי בדרכים הבאות:\n\n📱 דרך הבוט הזה - פשוט כתוב הודעה\n📧 או צור קשר ישירות אם יש לך את הפרטים שלי\n\nאני זמין לכל שאלה או בקשה מיוחדת! 😊\n\nבברכה,\nשפיר.`,
-    { 
+  await ctx.editMessageText(
+    `📞 <b>יצירת קשר עם המורה</b>\n\n👨‍🏫 שפיר - מורה למתמטיקה\n\n📧 אימייל: [לא נמסר]\n📱 טלפון: [לא נמסר]\n💬 ניתן גם לכתוב כאן בצ'אט הישיר!\n\nאשמח לעזור בכל שאלה! 😊\n\nבברכה,\nשפיר.`,
+    {
       parse_mode: 'HTML',
       reply_markup: Markup.inlineKeyboard([
-        [Markup.button.callback('« חזור להגדרות', 'settings')]
+        [Markup.button.callback('🏠 תפריט ראשי', 'back_to_menu')]
       ]).reply_markup
     }
   );
+}
+
+/**
+ * Handle day selection
+ */
+async function handleSelectDay(ctx, callbackData, student) {
+  try {
+    const selectedDate = callbackData.replace('select_day_', '');
+    
+    await ctx.editMessageText(
+      '⏳ <b>טוען זמנים זמינים ליום זה...</b>',
+      { parse_mode: 'HTML' }
+    );
+    
+    // Get available slots for this specific day
+    const availableSlots = await schedulerService.findAvailableSlots(
+      { date: selectedDate },
+      student.preferred_lesson_duration || settings.lessons.defaultDuration
+    );
+    
+    if (availableSlots.length === 0) {
+      await ctx.editMessageText(
+        `❌ <b>אין זמנים זמינים ביום זה</b>\n\nמצטער, כל השעות ביום זה תפוסות.\n\nבחר יום אחר או כתוב לי מתי תרצה להצטרף לרשימת המתנה.\n\nבברכה,\nשפיר.`,
+        {
+          parse_mode: 'HTML',
+          reply_markup: Markup.inlineKeyboard([
+            [Markup.button.callback('« חזור לבחירת יום', 'show_available_times')],
+            [Markup.button.callback('🏠 תפריט ראשי', 'back_to_menu')]
+          ]).reply_markup
+        }
+      );
+      return;
+    }
+    
+    // Format date for display
+    const dateMoment = moment(selectedDate).tz(settings.teacher.timezone);
+    const dayName = schedulerService.constructor.getHebrewDayName(dateMoment.day());
+    const monthName = schedulerService.constructor.getHebrewMonthName(dateMoment.month());
+    
+    let message = `🕐 <b>בחר שעה ל${dayName}, ${dateMoment.date()} ב${monthName}</b>\n\nזמנים זמינים:\n\n`;
+    
+    const timeButtons = [];
+    
+    // Store slots in session and create buttons
+    ctx.session = ctx.session || {};
+    ctx.session.availableSlots = [];
+    
+    availableSlots.forEach((slot, index) => {
+      const slotTime = moment(slot.start).tz(student.timezone || settings.teacher.timezone);
+      message += `🕐 ${slotTime.format('HH:mm')} - ${slotTime.clone().add(slot.duration, 'minutes').format('HH:mm')}\n`;
+      
+      ctx.session.availableSlots[index] = slot;
+      timeButtons.push([Markup.button.callback(
+        `🕐 ${slotTime.format('HH:mm')} (${slot.duration} דק׳)`,
+        `select_time_${index}`
+      )]);
+    });
+    
+    message += `\n💰 מחיר: ${settings.lessons.defaultPrice || 180}₪\n\nבחר את השעה המתאימה לך! ⏰\n\nבברכה,\nשפיר.`;
+    
+    // Add navigation buttons
+    timeButtons.push([Markup.button.callback('« חזור לבחירת יום', 'show_available_times')]);
+    timeButtons.push([Markup.button.callback('🏠 תפריט ראשי', 'back_to_menu')]);
+    
+    await ctx.editMessageText(message, {
+      parse_mode: 'HTML',
+      reply_markup: Markup.inlineKeyboard(timeButtons).reply_markup
+    });
+    
+  } catch (error) {
+    logger.error('Error in handleSelectDay:', error);
+    await ctx.editMessageText(
+      '❌ שגיאה בטעינת זמנים ליום זה. אנא נסה שוב.',
+      {
+        parse_mode: 'HTML',
+        reply_markup: Markup.inlineKeyboard([
+          [Markup.button.callback('« חזור לבחירת יום', 'show_available_times')],
+          [Markup.button.callback('🏠 תפריט ראשי', 'back_to_menu')]
+        ]).reply_markup
+      }
+    );
+  }
+}
+
+/**
+ * Handle time selection
+ */
+async function handleSelectTime(ctx, callbackData, student) {
+  try {
+    const slotIndex = parseInt(callbackData.replace('select_time_', ''));
+    
+    // Get the slot from session
+    if (!ctx.session?.availableSlots || !ctx.session.availableSlots[slotIndex]) {
+      await ctx.editMessageText(
+        '❌ מצטער, המידע על הזמן נמחק. אנא בחר זמן שוב.',
+        {
+          parse_mode: 'HTML',
+          reply_markup: Markup.inlineKeyboard([
+            [Markup.button.callback('« חזור לבחירת יום', 'show_available_times')],
+            [Markup.button.callback('🏠 תפריט ראשי', 'back_to_menu')]
+          ]).reply_markup
+        }
+      );
+      return;
+    }
+    
+    const selectedSlot = ctx.session.availableSlots[slotIndex];
+    
+    await ctx.editMessageText(
+      `⏳ <b>מתאם את השיעור...</b>\n\nמתאם עבורך את השיעור, אנא המתן.`,
+      { parse_mode: 'HTML' }
+    );
+    
+    try {
+      // Book the actual lesson
+      const bookingResult = await schedulerService.bookTimeSlot(
+        selectedSlot,
+        student,
+        {
+          subject: 'מתמטיקה',
+          lesson_type: 'regular',
+          difficulty_level: 'intermediate'
+        }
+      );
+      
+      if (bookingResult.success) {
+        await ctx.editMessageText(
+          bookingResult.message,
+          { 
+            parse_mode: 'HTML',
+            reply_markup: Markup.inlineKeyboard([
+              [Markup.button.callback('📅 הצג את הלוח שלי', 'my_schedule')],
+              [Markup.button.callback('📚 תאם שיעור נוסף', 'book_lesson')],
+              [Markup.button.callback('🏠 תפריט ראשי', 'back_to_menu')]
+            ]).reply_markup
+          }
+        );
+        
+        // Clear the session data
+        if (ctx.session) {
+          delete ctx.session.availableSlots;
+        }
+        
+      } else {
+        await ctx.editMessageText(
+          bookingResult.message,
+          {
+            parse_mode: 'HTML',
+            reply_markup: Markup.inlineKeyboard([
+              [Markup.button.callback('« חזור לבחירת יום', 'show_available_times')],
+              [Markup.button.callback('🏠 תפריט ראשי', 'back_to_menu')]
+            ]).reply_markup
+          }
+        );
+      }
+      
+    } catch (bookingError) {
+      logger.error('Error booking lesson:', bookingError);
+      
+      await ctx.editMessageText(
+        `❌ <b>שגיאה בתיאום השיעור</b>\n\nמצטער, הייתה בעיה בתיאום השיעור.\nייתכן שהזמן נתפס בינתיים.\n\nאנא נסה לבחור זמן אחר או צור קשר ישירות.\n\nבברכה,\nשפיר.`,
+        {
+          parse_mode: 'HTML',
+          reply_markup: Markup.inlineKeyboard([
+            [Markup.button.callback('« חזור לבחירת יום', 'show_available_times')],
+            [Markup.button.callback('🏠 תפריט ראשי', 'back_to_menu')]
+          ]).reply_markup
+        }
+      );
+    }
+    
+  } catch (error) {
+    logger.error('Error in handleSelectTime:', error);
+    await ctx.reply('❌ מצטער, משהו השתבש. אנא נסה שוב.\n\nבברכה,\nשפיר.');
+  }
 }
 
 module.exports = {
