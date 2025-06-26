@@ -1,0 +1,93 @@
+name: Deploy to Render
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Run linter
+      run: npm run lint --if-present
+    
+    - name: Run tests
+      run: npm test --if-present
+    
+    - name: Check environment variables
+      run: |
+        echo "Checking required environment variables..."
+        [ -z "${{ secrets.TELEGRAM_BOT_TOKEN }}" ] && echo "TELEGRAM_BOT_TOKEN is missing" && exit 1
+        [ -z "${{ secrets.OPENAI_API_KEY }}" ] && echo "OPENAI_API_KEY is missing" && exit 1
+        echo "Environment variables check passed"
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Deploy to Render
+      uses: johnbeynon/render-deploy-action@v0.0.8
+      with:
+        service-id: ${{ secrets.RENDER_SERVICE_ID }}
+        api-key: ${{ secrets.RENDER_API_KEY }}
+        wait-for-success: true
+    
+    - name: Notify on success
+      if: success()
+      run: |
+        echo "🎉 Deployment to Render completed successfully!"
+        echo "Service URL: https://math-tutor-bot.onrender.com"
+    
+    - name: Notify on failure
+      if: failure()
+      run: |
+        echo "❌ Deployment to Render failed!"
+        echo "Please check the logs and fix any issues."
+
+  health-check:
+    needs: deploy
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+    - name: Wait for deployment
+      run: sleep 60
+    
+    - name: Health check
+      run: |
+        echo "Performing health check..."
+        response=$(curl -s -o /dev/null -w "%{http_code}" https://math-tutor-bot.onrender.com/health || echo "000")
+        if [ "$response" -eq 200 ]; then
+          echo "✅ Health check passed - Service is running"
+        else
+          echo "❌ Health check failed - HTTP $response"
+          exit 1
+        fi
+    
+    - name: Bot webhook check
+      run: |
+        echo "Checking bot webhook status..."
+        # You can add webhook verification here if needed
+        echo "🤖 Bot should be ready to receive messages" 

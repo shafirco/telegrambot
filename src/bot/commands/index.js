@@ -12,37 +12,37 @@ const start = async (ctx) => {
     const isReturningUser = student.total_lessons_booked > 0;
     
     const welcomeMessage = isReturningUser 
-      ? `Welcome back, ${student.getDisplayName()}! 👋`
-      : `Welcome to ${config.teacher.name}'s Math Tutoring Bot! 🎓\n\nI'm here to help you schedule your math lessons easily using natural language.`;
+      ? `ברוך הבא ${student.getDisplayName()}! 👋`
+      : `ברוך הבא לבוט ההוראה של ${config.teacher.name}! 🎓\n\nאני כאן לעזור לך לתאם שיעורי מתמטיקה בקלות באמצעות שפה טבעית.`;
 
     const description = !isReturningUser ? `
-✨ <b>What I can do:</b>
-• 📚 Book lessons - just tell me when you're available
-• 📅 Check your schedule and upcoming lessons  
-• 🔄 Reschedule or cancel existing lessons
-• ⏰ Join waitlist when preferred times aren't available
-• 🔔 Send reminders and notifications
-• ⚙️ Manage your preferences and settings
+✨ <b>מה אני יכול לעשות:</b>
+• 📚 לתאם שיעורים - פשוט תגיד לי מתי אתה פנוי
+• 📅 לבדוק את לוח הזמנים והשיעורים הקרובים שלך
+• 🔄 לשנות או לבטל שיעורים קיימים
+• ⏰ להצטרף לרשימת המתנה כשהזמנים המועדפים תפוסים
+• 🔔 לשלוח תזכורות והתראות
+• ⚙️ לנהל את ההעדפות וההגדרות שלך
 
-<b>Getting Started:</b>
-You can talk to me naturally! Try saying things like:
-• "I want to book a lesson this Friday at 3 PM"
-• "What times are available next week?"
-• "I need to cancel my Tuesday lesson"
+<b>איך להתחיל:</b>
+אתה יכול לדבר איתי בצורה טבעית! נסה לומר דברים כמו:
+• "אני רוצה לתאם שיעור ביום שישי בשעה 3"
+• "איזה זמנים פנויים יש השבוע הבא?"
+• "אני צריך לבטל את השיעור ביום שלישי"
 
-<b>Business Hours:</b> ${config.businessHours.start} - ${config.businessHours.end}
-<b>Available Days:</b> ${config.businessHours.days.join(', ')}
+<b>שעות פעילות:</b> ${config.businessHours.start} - ${config.businessHours.end}
+<b>ימי פעילות:</b> ${config.businessHours.days.join(', ')}
 ` : ``;
 
     const buttons = Markup.inlineKeyboard([
-      [Markup.button.callback('📚 Book a Lesson', 'book_lesson')],
+      [Markup.button.callback('📚 תיאום שיעור', 'book_lesson')],
       [
-        Markup.button.callback('📅 My Schedule', 'my_schedule'),
-        Markup.button.callback('❓ Help', 'help')
+        Markup.button.callback('📅 לוח הזמנים שלי', 'my_schedule'),
+        Markup.button.callback('❓ עזרה', 'help')
       ],
       [
-        Markup.button.callback('⚙️ Settings', 'settings'),
-        Markup.button.callback('📊 Status', 'my_status')
+        Markup.button.callback('⚙️ הגדרות', 'settings'),
+        Markup.button.callback('📊 סטטוס', 'my_status')
       ]
     ]);
 
@@ -55,7 +55,7 @@ You can talk to me naturally! Try saying things like:
 
   } catch (error) {
     logger.error('Error in start command:', error);
-    await ctx.reply('❌ Sorry, something went wrong. Please try again.');
+    await ctx.reply('❌ סליחה, משהו השתבש. אנא נסה שוב.');
   }
 };
 

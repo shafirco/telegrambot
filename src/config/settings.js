@@ -89,8 +89,8 @@ const settings = {
 
   // Supported Languages
   languages: {
-    default: 'en',
-    supported: ['en', 'he', 'ar', 'es', 'fr']
+    default: 'he',
+    supported: ['he', 'en', 'ar', 'es', 'fr']
   }
 };
 

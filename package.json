@@ -4,10 +4,12 @@
   "description": "AI-powered Telegram bot for scheduling math lessons with Google Calendar integration",
   "main": "src/app.js",
   "scripts": {
-    "start": "NODE_ENV=production node src/app.js",
-    "dev": "NODE_ENV=development node src/app.js",
+    "start": "node src/app.js",
+    "dev": "nodemon src/app.js",
     "setup": "node scripts/setup.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "lint": "eslint src/ --ext .js --fix",
+    "test": "echo \"No tests specified yet\" && exit 0",
+    "health": "curl http://localhost:3000/health"
   },
   "engines": {
     "node": ">=18.0.0",

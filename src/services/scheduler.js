@@ -12,6 +12,7 @@ class SchedulerService {
   constructor() {
     this.maintenanceTask = null;
     this.isMaintenanceRunning = false;
+    this.maintenanceInterval = null;
   }
 
   /**
@@ -697,6 +698,169 @@ class SchedulerService {
     if (pendingLessons.length > 0) {
       logger.info(`Synced ${pendingLessons.length} calendar events`);
     }
+  }
+
+  /**
+   * Check if teacher is available at a specific time
+   */
+  async checkTeacherAvailability(startTime, durationMinutes = 60) {
+    try {
+      const endTime = moment(startTime).add(durationMinutes, 'minutes');
+      
+      // Check if it's within business hours
+      if (!settings.isBusinessHour(startTime) || !settings.isBusinessDay(startTime)) {
+        return {
+          available: false,
+          reason: 'מחוץ לשעות הפעילות',
+          nextAvailable: this.getNextBusinessHour()
+        };
+      }
+
+      // Check for existing lessons (conflicts)
+      const conflictingLessons = await Lesson.findAll({
+        where: {
+          start_time: {
+            [Op.lt]: endTime.toDate()
+          },
+          end_time: {
+            [Op.gt]: moment(startTime).toDate()
+          },
+          status: {
+            [Op.in]: ['scheduled', 'confirmed']
+          }
+        }
+      });
+
+      if (conflictingLessons.length > 0) {
+        return {
+          available: false,
+          reason: 'זמן תפוס - יש שיעור קיים',
+          conflictingLesson: conflictingLessons[0],
+          nextAvailable: await this.getNextAvailableSlot(startTime, durationMinutes)
+        };
+      }
+
+      // Check teacher's specific availability (if manually set)
+      const teacherUnavailable = await TeacherAvailability.findOne({
+        where: {
+          start_time: {
+            [Op.lte]: moment(startTime).toDate()
+          },
+          end_time: {
+            [Op.gte]: endTime.toDate()
+          },
+          is_available: false
+        }
+      });
+
+      if (teacherUnavailable) {
+        return {
+          available: false,
+          reason: teacherUnavailable.reason || 'המורה לא זמין',
+          unavailableUntil: teacherUnavailable.end_time,
+          nextAvailable: await this.getNextAvailableSlot(startTime, durationMinutes)
+        };
+      }
+
+      return {
+        available: true,
+        startTime: moment(startTime).toDate(),
+        endTime: endTime.toDate(),
+        duration: durationMinutes
+      };
+
+    } catch (error) {
+      logger.error('Error checking teacher availability:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Set teacher as unavailable for a specific time period
+   */
+  async setTeacherUnavailable(startTime, endTime, reason = 'לא זמין') {
+    try {
+      await TeacherAvailability.create({
+        start_time: moment(startTime).toDate(),
+        end_time: moment(endTime).toDate(),
+        is_available: false,
+        reason: reason,
+        created_by: 'system'
+      });
+
+      logger.info(`Teacher marked unavailable from ${startTime} to ${endTime}: ${reason}`);
+      return true;
+    } catch (error) {
+      logger.error('Error setting teacher unavailable:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get next available time slot
+   */
+  async getNextAvailableSlot(fromTime, durationMinutes = 60) {
+    try {
+      let checkTime = moment(fromTime).add(30, 'minutes'); // Start checking 30 min later
+      const maxDaysAhead = 14; // Don't check more than 2 weeks ahead
+      
+      for (let day = 0; day < maxDaysAhead; day++) {
+        const dayStart = checkTime.clone().set({
+          hour: parseInt(settings.businessHours.start.split(':')[0]),
+          minute: parseInt(settings.businessHours.start.split(':')[1]),
+          second: 0
+        });
+        
+        const dayEnd = checkTime.clone().set({
+          hour: parseInt(settings.businessHours.end.split(':')[0]),
+          minute: parseInt(settings.businessHours.end.split(':')[1]),
+          second: 0
+        });
+
+        if (settings.isBusinessDay(dayStart.toDate())) {
+          let slotTime = dayStart.clone();
+          
+          while (slotTime.isBefore(dayEnd.subtract(durationMinutes, 'minutes'))) {
+            const availability = await this.checkTeacherAvailability(slotTime.toDate(), durationMinutes);
+            
+            if (availability.available) {
+              return slotTime.toDate();
+            }
+            
+            slotTime.add(30, 'minutes'); // Check every 30 minutes
+          }
+        }
+        
+        checkTime.add(1, 'day');
+      }
+
+      return null; // No availability found in the next 2 weeks
+    } catch (error) {
+      logger.error('Error finding next available slot:', error);
+      return null;
+    }
+  }
+
+  getNextBusinessHour() {
+    const now = moment().tz(settings.teacher.timezone);
+    let nextTime = now.clone();
+    
+    // If it's after business hours today, move to next business day
+    const businessEnd = now.clone().set({
+      hour: parseInt(settings.businessHours.end.split(':')[0]),
+      minute: parseInt(settings.businessHours.end.split(':')[1])
+    });
+    
+    if (now.isAfter(businessEnd) || !settings.isBusinessDay(now.toDate())) {
+      nextTime = moment(settings.getNextBusinessDay(now.toDate())).tz(settings.teacher.timezone);
+    }
+    
+    // Set to business start time
+    return nextTime.set({
+      hour: parseInt(settings.businessHours.start.split(':')[0]),
+      minute: parseInt(settings.businessHours.start.split(':')[1]),
+      second: 0
+    }).toDate();
   }
 }
 
