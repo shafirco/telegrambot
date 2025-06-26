@@ -120,13 +120,13 @@ class Application {
       logger.info(`Environment: ${process.env.NODE_ENV}`);
       logger.info(`Webhook URL: ${process.env.WEBHOOK_URL || 'Not set'}`);
       
-      // Set webhook for production, use polling for development
-      if (process.env.NODE_ENV === 'production' && process.env.WEBHOOK_URL) {
-        logger.info('Setting up webhook for production...');
+      // Use webhook if WEBHOOK_URL is provided, otherwise use polling
+      if (process.env.WEBHOOK_URL) {
+        logger.info('Setting up webhook...');
         await bot.telegram.setWebhook(`${process.env.WEBHOOK_URL}/webhook`);
         logger.info('Telegram webhook set successfully');
       } else {
-        logger.info('Starting bot with polling...');
+        logger.info('Starting bot with polling (development mode)...');
         await bot.launch();
         logger.info('Telegram bot started with polling');
       }
