@@ -15,7 +15,7 @@ const settings = {
   businessHours: {
     start: process.env.BUSINESS_HOURS_START || '10:00',
     end: process.env.BUSINESS_HOURS_END || '18:00',
-    days: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday'], // Hebrew business days
+    days: ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי'], // Hebrew business days
     timezone: process.env.TEACHER_TIMEZONE || 'Asia/Jerusalem'
   },
 
@@ -24,7 +24,7 @@ const settings = {
     defaultDuration: parseInt(process.env.DEFAULT_LESSON_DURATION) || 60,
     bufferTime: 15, // Minutes between lessons
     maxAdvanceBooking: 30, // Days ahead students can book
-    defaultPrice: parseFloat(process.env.DEFAULT_LESSON_PRICE) || 100,
+    defaultPrice: parseFloat(process.env.DEFAULT_LESSON_PRICE) || 180,
     currency: 'ILS',
     location: 'אונליין' // Default to online lessons
   },

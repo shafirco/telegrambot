@@ -78,6 +78,14 @@ async function handle(ctx) {
         await handleBookDifferentTime(ctx, student);
         break;
         
+      case 'update_profile':
+        await handleUpdateProfile(ctx, student);
+        break;
+        
+      case 'contact_teacher':
+        await handleContactTeacher(ctx, student);
+        break;
+        
       default:
         // Handle complex callback data (with parameters)
         if (callbackData.startsWith('book_slot_')) {
@@ -270,7 +278,7 @@ async function handleShowAvailableTimes(ctx, student) {
         student.preferred_lesson_duration || settings.lessons.defaultDuration,
         7 // Next 7 days
       ),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 15000))
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 8000)) // Reduced to 8 seconds
     ]);
     
     if (availableSlots.length === 0) {
@@ -305,7 +313,7 @@ async function handleShowAvailableTimes(ctx, student) {
       buttons.push([Markup.button.callback(`📚 תאם זמן ${index + 1}`, `book_slot_${index}`)]);
     });
     
-    message += `\n💰 מחיר שיעור: ${settings.lessons.defaultPrice || 100}₪\n⏱️ אורך שיעור: ${student.preferred_lesson_duration || settings.lessons.defaultDuration} דקות\n\nבברכה,\nשפיר.`;
+    message += `\n💰 מחיר שיעור: ${settings.lessons.defaultPrice || 180}₪\n⏱️ אורך שיעור: ${student.preferred_lesson_duration || settings.lessons.defaultDuration} דקות\n\nבברכה,\nשפיר.`;
     
     buttons.push([Markup.button.callback('« חזור לתפריט', 'back_to_menu')]);
     
@@ -319,7 +327,7 @@ async function handleShowAvailableTimes(ctx, student) {
     
     try {
       await ctx.editMessageText(
-        '❌ <b>שגיאה בטעינת זמנים</b>\n\nמצטער, הייתה שגיאה בטעינת הזמנים הזמינים.\nאנא נסה שוב מאוחר יותר או צור קשר ישירות.\n\nבברכה,\nשפיר.',
+        '❌ <b>שגיאה בטעינת זמנים</b>\n\nמצטער, הייתה שגיאה בטעינת הזמנים הזמינים.\nאנא נסה שוב מאוחר יותר או כתוב לי ישירות מתי תרצה לתאם.\n\nבברכה,\nשפיר.',
         {
           parse_mode: 'HTML',
           reply_markup: Markup.inlineKeyboard([
@@ -375,7 +383,7 @@ async function handleBookSlot(ctx, callbackData, student) {
         const monthName = schedulerService.constructor.getHebrewMonthName(slotTime.month());
         
         await ctx.editMessageText(
-          `🎉 <b>השיעור נתאם בהצלחה!</b>\n\n📅 תאריך: ${dayName}, ${slotTime.date()} ב${monthName}\n⏰ שעה: ${slotTime.format('HH:mm')}\n⏱️ אורך: ${selectedSlot.duration} דקות\n💰 מחיר: ${settings.lessons.defaultPrice || 100}₪\n\n📧 תקבל תזכורת לפני השיעור!\n🗓️ השיעור נוסף ליומן Google שלי.\n\nמצפה לראותך! 📚\n\nבברכה,\nשפיר.`,
+          `🎉 <b>השיעור נתאם בהצלחה!</b>\n\n📅 תאריך: ${dayName}, ${slotTime.date()} ב${monthName}\n⏰ שעה: ${slotTime.format('HH:mm')}\n⏱️ אורך: ${selectedSlot.duration} דקות\n💰 מחיר: ${settings.lessons.defaultPrice || 180}₪\n\n📧 תקבל תזכורת לפני השיעור!\n🗓️ השיעור נוסף ליומן Google שלי.\n\nמצפה לראותך! 📚\n\nבברכה,\nשפיר.`,
           { 
             parse_mode: 'HTML',
             reply_markup: Markup.inlineKeyboard([
@@ -754,6 +762,36 @@ const handleWaitlistTime = async (ctx, student) => {
     await ctx.reply('❌ שגיאה בהוספה לרשימת המתנה. אנא נסה שוב.');
   }
 };
+
+/**
+ * Handle update profile callback
+ */
+async function handleUpdateProfile(ctx, student) {
+  await ctx.reply(
+    `⚙️ <b>עדכון פרופיל</b>\n\nכרגע אתה יכול לעדכן את הפרטים שלך על ידי שליחת הודעה חדשה עם הפרטים המעודכנים.\n\nהפרטים הנוכחיים שלך:\n📛 שם: ${student.getDisplayName()}\n📱 טלפון: ${student.phone || 'לא צוין'}\n📧 אימייל: ${student.email || 'לא צוין'}\n⏰ אזור זמן: ${student.timezone || 'ישראל'}\n\nבעתיד נוסיף אפשרות לעדכן בקלות דרך הבוט.\n\nבברכה,\nשפיר.`,
+    { 
+      parse_mode: 'HTML',
+      reply_markup: Markup.inlineKeyboard([
+        [Markup.button.callback('« חזור להגדרות', 'settings')]
+      ]).reply_markup
+    }
+  );
+}
+
+/**
+ * Handle contact teacher callback
+ */
+async function handleContactTeacher(ctx, student) {
+  await ctx.reply(
+    `📞 <b>יצירת קשר עם שפיר</b>\n\nאתה יכול ליצור קשר איתי בדרכים הבאות:\n\n📱 דרך הבוט הזה - פשוט כתוב הודעה\n📧 או צור קשר ישירות אם יש לך את הפרטים שלי\n\nאני זמין לכל שאלה או בקשה מיוחדת! 😊\n\nבברכה,\nשפיר.`,
+    { 
+      parse_mode: 'HTML',
+      reply_markup: Markup.inlineKeyboard([
+        [Markup.button.callback('« חזור להגדרות', 'settings')]
+      ]).reply_markup
+    }
+  );
+}
 
 module.exports = {
   handle,
