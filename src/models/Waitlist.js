@@ -102,6 +102,19 @@ const Waitlist = sequelize.define('Waitlist', {
     allowNull: true
   },
   
+  // Specific date and time preference fields (new)
+  preferred_date: {
+    type: DataTypes.STRING(10), // YYYY-MM-DD format
+    allowNull: true,
+    index: true
+  },
+  
+  time_preference: {
+    type: DataTypes.ENUM('morning', 'afternoon', 'evening', 'anytime'),
+    allowNull: true,
+    index: true
+  },
+  
   // Notification tracking
   notification_count: {
     type: DataTypes.INTEGER,

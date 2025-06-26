@@ -171,13 +171,16 @@ class SchedulerService {
             const isTeacherAvailable = await this.checkTeacherAvailability(currentSlot.toDate(), durationMinutes);
             
             if (isTeacherAvailable.available) {
+              const dayName = this.getHebrewDayName(currentSlot.day());
+              const monthName = this.getHebrewMonthName(currentSlot.month());
+              
               availableSlots.push({
                 start: currentSlot.toDate(),
                 end: slotEnd.toDate(),
                 duration: durationMinutes,
                 date: currentSlot.format('YYYY-MM-DD'),
                 time: currentSlot.format('HH:mm'),
-                formattedTime: currentSlot.format('dddd, D בMMMM בשעה HH:mm'),
+                formattedTime: `${dayName}, ${currentSlot.date()} ב${monthName} בשעה ${currentSlot.format('HH:mm')}`,
                 pricePerHour: settings.lessons.defaultPrice || 100
               });
               
@@ -203,6 +206,43 @@ class SchedulerService {
       logger.error('Error finding available slots:', error);
       return [];
     }
+  }
+
+  /**
+   * Get Hebrew day name
+   */
+  getHebrewDayName(dayNumber) {
+    const hebrewDays = {
+      0: 'ראשון',  // Sunday
+      1: 'שני',    // Monday
+      2: 'שלישי',  // Tuesday
+      3: 'רביעי',  // Wednesday
+      4: 'חמישי',  // Thursday
+      5: 'שישי',   // Friday
+      6: 'שבת'     // Saturday
+    };
+    return hebrewDays[dayNumber] || 'יום';
+  }
+
+  /**
+   * Get Hebrew month name
+   */
+  getHebrewMonthName(monthNumber) {
+    const hebrewMonths = {
+      0: 'ינואר',   // January
+      1: 'פברואר',  // February
+      2: 'מרץ',     // March
+      3: 'אפריל',   // April
+      4: 'מאי',     // May
+      5: 'יוני',    // June
+      6: 'יולי',    // July
+      7: 'אוגוסט',  // August
+      8: 'ספטמבר', // September
+      9: 'אוקטובר', // October
+      10: 'נובמבר', // November
+      11: 'דצמבר'   // December
+    };
+    return hebrewMonths[monthNumber] || 'חודש';
   }
 
   /**
@@ -240,91 +280,80 @@ class SchedulerService {
    */
   async bookTimeSlot(slotDetails, student, lessonDetails = {}) {
     try {
-      logger.scheduleLog('booking_slot', {
+      logger.scheduleLog('booking_lesson', {
         studentId: student.id,
-        slotStart: slotDetails.start,
+        startTime: slotDetails.start,
         duration: slotDetails.duration
       });
 
-      // Double-check availability
-      const hasConflict = await Lesson.hasConflict(slotDetails.start, slotDetails.end);
-      if (hasConflict) {
-        throw new Error('This time slot is no longer available');
-      }
-
-      // Create the lesson
+      // Create lesson record
       const lesson = await Lesson.create({
         student_id: student.id,
         start_time: slotDetails.start,
         end_time: slotDetails.end,
         duration_minutes: slotDetails.duration,
-        subject: lessonDetails.subject || 'Math Lesson',
-        topic: lessonDetails.topic,
-        difficulty_level: lessonDetails.difficulty,
+        subject: lessonDetails.subject || 'מתמטיקה',
+        topic: lessonDetails.topic || null,
         lesson_type: lessonDetails.lesson_type || 'regular',
-        original_request: lessonDetails.original_request,
-        booking_method: 'telegram_bot',
+        difficulty_level: lessonDetails.difficulty_level || 'intermediate',
+        status: 'scheduled',
         price_amount: this.calculateLessonPrice(slotDetails),
-        metadata: {
-          ai_confidence: lessonDetails.ai_confidence,
-          booking_source: 'telegram_bot'
-        }
+        notes: lessonDetails.notes || null,
+        location: lessonDetails.location || 'אונליין'
       });
 
-      // Create calendar event
+      // Create Google Calendar event
       try {
         const calendarEvent = await calendarService.createEvent({
-          summary: `Math Lesson - ${student.getDisplayName()}`,
-          description: `Lesson with ${student.getDisplayName()}${lessonDetails.topic ? `\nTopic: ${lessonDetails.topic}` : ''}`,
+          summary: `שיעור מתמטיקה - ${student.getDisplayName()}`,
+          description: `שיעור מתמטיקה עם ${student.getDisplayName()}\n\nמורה: שפיר\nנושא: ${lessonDetails.subject || 'מתמטיקה'}\nטלפון תלמיד: ${student.phone || 'לא צוין'}`,
           start: {
-            dateTime: moment(slotDetails.start).toISOString(),
+            dateTime: moment(slotDetails.start).format(),
             timeZone: settings.teacher.timezone
           },
           end: {
-            dateTime: moment(slotDetails.end).toISOString(),
+            dateTime: moment(slotDetails.end).format(),
             timeZone: settings.teacher.timezone
           },
-          attendees: [{
-            email: student.email,
-            displayName: student.getDisplayName()
-          }]
+          attendees: student.email ? [{ email: student.email }] : []
         });
 
         // Update lesson with calendar event ID
-        lesson.google_calendar_event_id = calendarEvent.id;
-        lesson.calendar_sync_status = 'synced';
-        await lesson.save();
+        await lesson.update({
+          google_calendar_event_id: calendarEvent.id
+        });
+
+        logger.scheduleLog('calendar_event_created', {
+          lessonId: lesson.id,
+          calendarEventId: calendarEvent.id
+        });
 
       } catch (calendarError) {
         logger.error('Failed to create calendar event:', calendarError);
-        lesson.calendar_sync_status = 'error';
-        await lesson.save();
+        // Don't fail the lesson booking if calendar fails
       }
 
-      // Update student lesson count
-      await student.incrementLessonCount('booked');
+      // Update student statistics
+      await student.increment('total_lessons_booked');
 
-      // Send confirmation notification
-      await notificationService.sendBookingConfirmation(student, lesson);
-
-      // Check and notify waitlist
-      await this.processWaitlistForCancellation(slotDetails.start, slotDetails.duration);
+      // Send notification
+      await notificationService.sendLessonConfirmation(student, lesson);
 
       logger.scheduleLog('lesson_booked', {
-        studentId: student.id,
         lessonId: lesson.id,
-        startTime: lesson.start_time
+        studentId: student.id,
+        startTime: slotDetails.start
       });
 
       return {
         success: true,
         lesson,
-        message: `✅ Your lesson has been booked for ${moment(lesson.start_time).format('dddd, MMMM Do [at] h:mm A')}! You'll receive a reminder 24 hours before the lesson.`
+        message: `✅ השיעור נקבע בהצלחה!\n\n📅 ${moment(slotDetails.start).tz(student.timezone).format('dddd, D בMMMM בשעה HH:mm')}\n⏱️ אורך: ${slotDetails.duration} דקות\n\nתקבל תזכורת לפני השיעור! 🔔`
       };
 
     } catch (error) {
       logger.error('Error booking time slot:', error);
-      throw error;
+      throw new Error('נכשל בתיאום השיעור. אנא נסה שוב או פנה לתמיכה.');
     }
   }
 

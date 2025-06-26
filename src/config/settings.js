@@ -3,27 +3,30 @@ const moment = require('moment-timezone');
 const settings = {
   // Teacher Configuration
   teacher: {
-    name: process.env.TEACHER_NAME || 'Math Teacher',
-    timezone: process.env.TEACHER_TIMEZONE || 'America/New_York'
+    name: 'שפיר',
+    timezone: process.env.TEACHER_TIMEZONE || 'Asia/Jerusalem',
+    email: process.env.TEACHER_EMAIL || '',
+    phone: process.env.TEACHER_PHONE || '',
+    language: 'he', // Hebrew as primary language
+    currency: 'ILS'
   },
 
   // Business Hours Configuration
   businessHours: {
     start: process.env.BUSINESS_HOURS_START || '09:00',
     end: process.env.BUSINESS_HOURS_END || '18:00',
-    days: (process.env.WORKING_DAYS || 'monday,tuesday,wednesday,thursday,friday')
-      .split(',').map(day => day.trim().toLowerCase())
+    days: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday'], // Hebrew business days
+    timezone: process.env.TEACHER_TIMEZONE || 'Asia/Jerusalem'
   },
 
   // Lesson Settings
   lessons: {
-    defaultDuration: 60, // minutes
-    defaultPrice: 150, // per hour in local currency
-    minAdvanceBooking: 2, // hours
-    maxAdvanceBooking: 30, // days
-    bufferTime: 15, // minutes between lessons
-    maxReschedules: 3, // per lesson
-    cancellationWindowHours: 24 // hours before lesson start
+    defaultDuration: parseInt(process.env.DEFAULT_LESSON_DURATION) || 60,
+    bufferTime: 15, // Minutes between lessons
+    maxAdvanceBooking: 30, // Days ahead students can book
+    defaultPrice: parseFloat(process.env.DEFAULT_LESSON_PRICE) || 100,
+    currency: 'ILS',
+    location: 'אונליין' // Default to online lessons
   },
 
   // Waitlist Configuration
@@ -35,18 +38,20 @@ const settings = {
 
   // Notification Settings
   notifications: {
-    reminderHours: parseInt(process.env.REMINDER_HOURS_BEFORE) || 24,
-    enableReminders: true,
-    enableWaitlistNotifications: true,
-    enableBookingConfirmations: true
+    reminderHours: [24, 2], // Hours before lesson to send reminders
+    waitlistNotifications: true,
+    confirmationNotifications: true,
+    emailNotifications: false, // Disabled as requested
+    smsNotifications: false
   },
 
   // AI Configuration
   ai: {
     model: process.env.OPENAI_MODEL || 'gpt-4-turbo-preview',
-    maxTokens: parseInt(process.env.MAX_TOKENS) || 500,
-    temperature: parseFloat(process.env.TEMPERATURE) || 0.7,
-    timeout: parseInt(process.env.AI_RESPONSE_TIMEOUT) || 10000
+    maxTokens: parseInt(process.env.AI_MAX_TOKENS) || 500,
+    temperature: parseFloat(process.env.AI_TEMPERATURE) || 0.7,
+    timeout: parseInt(process.env.AI_TIMEOUT) || 10000,
+    language: 'hebrew'
   },
 
   // Telegram Bot Configuration
@@ -92,38 +97,52 @@ const settings = {
   languages: {
     default: 'he',
     supported: ['he', 'en', 'ar', 'es', 'fr']
+  },
+
+  bot: {
+    username: process.env.BOT_USERNAME || 'math_tutor_bot',
+    language: 'he',
+    timezone: 'Asia/Jerusalem',
+    enableAI: true,
+    enableCalendar: true,
+    maxSessionDuration: 30 * 60 * 1000, // 30 minutes
+    rateLimit: {
+      windowMs: 15 * 60 * 1000, // 15 minutes
+      maxRequests: 100
+    }
+  },
+
+  database: {
+    dialect: 'sqlite',
+    storage: process.env.DATABASE_PATH || './data/scheduler.db',
+    logging: process.env.NODE_ENV === 'development',
+    timezone: '+02:00' // Israel timezone
   }
 };
 
 // Helper functions
 settings.isBusinessDay = (date) => {
-  const dayName = moment(date).format('dddd').toLowerCase();
-  const englishToHebrewDays = {
-    'sunday': 'ראשון',
-    'monday': 'שני', 
-    'tuesday': 'שלישי',
-    'wednesday': 'רביעי',
-    'thursday': 'חמישי',
-    'friday': 'שישי',
-    'saturday': 'שבת'
+  const day = moment(date).tz(settings.teacher.timezone).day();
+  // Sunday=0, Monday=1, ..., Saturday=6
+  // Business days: Sunday(0) to Thursday(4)
+  return day >= 0 && day <= 4;
+};
+
+settings.getBusinessDayName = (dayNumber) => {
+  const hebrewDays = {
+    0: 'ראשון',
+    1: 'שני', 
+    2: 'שלישי',
+    3: 'רביעי',
+    4: 'חמישי',
+    5: 'שישי',
+    6: 'שבת'
   };
-  
-  // Check both English and Hebrew day names
-  const businessDays = settings.businessHours.days.map(day => day.toLowerCase());
-  return businessDays.includes(dayName) || businessDays.includes(englishToHebrewDays[dayName]);
+  return hebrewDays[dayNumber] || 'יום';
 };
 
-settings.isBusinessHour = (date) => {
-  const time = moment(date).format('HH:mm');
-  return time >= settings.businessHours.start && time <= settings.businessHours.end;
-};
-
-settings.getNextBusinessDay = (fromDate = new Date()) => {
-  let nextDay = moment(fromDate).add(1, 'day');
-  while (!settings.isBusinessDay(nextDay.toDate())) {
-    nextDay.add(1, 'day');
-  }
-  return nextDay.toDate();
+settings.formatCurrency = (amount) => {
+  return `₪${amount}`;
 };
 
 module.exports = settings; 

@@ -161,7 +161,6 @@ const showAvailableSlots = async (ctx, slots, schedulingData) => {
   }
 
   buttons.push([
-    Markup.button.callback('⏰ הצטרף לרשימת המתנה', 'join_waitlist'),
     Markup.button.callback('🔍 זמן אחר', 'book_different_time')
   ]);
 
@@ -196,7 +195,6 @@ const showWaitlistOptions = async (ctx, alternativeSlots, schedulingData) => {
   }
 
   buttons.push([
-    Markup.button.callback('⏰ הצטרף לרשימת המתנה', 'join_waitlist_confirmed'),
     Markup.button.callback('🔍 נסה בקשה אחרת', 'book_different_time')
   ]);
 
@@ -205,10 +203,11 @@ const showWaitlistOptions = async (ctx, alternativeSlots, schedulingData) => {
     reply_markup: Markup.inlineKeyboard(buttons).reply_markup
   });
 
+  // Store data for follow-up
   ctx.session.data = ctx.session.data || {};
   ctx.session.data.alternativeSlots = alternativeSlots;
   ctx.session.data.schedulingData = schedulingData;
-  ctx.session.step = 'waitlist_decision';
+  ctx.session.step = 'waitlist_options';
 };
 
 const showAvailabilityResults = async (ctx, slots, aiMessage) => {

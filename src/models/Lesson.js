@@ -224,6 +224,11 @@ const Lesson = sequelize.define('Lesson', {
     allowNull: true
   }
 }, {
+  // Model options
+  timestamps: true,
+  createdAt: 'created_at',
+  updatedAt: 'updated_at',
+  
   indexes: [
     {
       fields: ['student_id']
@@ -238,14 +243,7 @@ const Lesson = sequelize.define('Lesson', {
       fields: ['status']
     },
     {
-      fields: ['booking_date']
-    },
-    {
       fields: ['google_calendar_event_id']
-    },
-    {
-      name: 'lesson_time_range',
-      fields: ['start_time', 'end_time']
     }
   ],
   
@@ -340,17 +338,75 @@ Lesson.prototype.reschedule = async function(newStartTime, newDuration = null) {
   return newLesson;
 };
 
-// Class methods
-Lesson.findActiveByStudent = async function(studentId) {
-  return await this.findAll({
-    where: {
-      student_id: studentId,
-      status: ['scheduled', 'confirmed', 'in_progress']
-    },
-    order: [['start_time', 'ASC']]
-  });
+// Static methods
+Lesson.hasConflict = async function(startTime, endTime) {
+  try {
+    const conflictingLesson = await this.findOne({
+      where: {
+        status: {
+          [sequelize.Sequelize.Op.not]: ['cancelled_by_student', 'cancelled_by_teacher', 'no_show']
+        },
+        [sequelize.Sequelize.Op.or]: [
+          // New lesson starts during existing lesson
+          {
+            start_time: {
+              [sequelize.Sequelize.Op.lte]: startTime
+            },
+            end_time: {
+              [sequelize.Sequelize.Op.gt]: startTime
+            }
+          },
+          // New lesson ends during existing lesson
+          {
+            start_time: {
+              [sequelize.Sequelize.Op.lt]: endTime
+            },
+            end_time: {
+              [sequelize.Sequelize.Op.gte]: endTime
+            }
+          },
+          // New lesson completely contains existing lesson
+          {
+            start_time: {
+              [sequelize.Sequelize.Op.gte]: startTime
+            },
+            end_time: {
+              [sequelize.Sequelize.Op.lte]: endTime
+            }
+          }
+        ]
+      }
+    });
+
+    return !!conflictingLesson;
+  } catch (error) {
+    console.error('Error checking lesson conflict:', error);
+    return true; // Assume conflict if error occurs
+  }
 };
 
+Lesson.findActiveByStudent = async function(studentId) {
+  try {
+    const now = new Date();
+    return await this.findAll({
+      where: {
+        student_id: studentId,
+        status: {
+          [sequelize.Sequelize.Op.not]: ['cancelled_by_student', 'cancelled_by_teacher', 'no_show']
+        },
+        start_time: {
+          [sequelize.Sequelize.Op.gte]: now
+        }
+      },
+      order: [['start_time', 'ASC']]
+    });
+  } catch (error) {
+    console.error('Error finding active lessons:', error);
+    return [];
+  }
+};
+
+// Class methods
 Lesson.findByTimeRange = async function(startTime, endTime) {
   return await this.findAll({
     where: {
@@ -369,47 +425,6 @@ Lesson.findScheduledForToday = async function() {
   const endOfDay = new Date(today.setHours(23, 59, 59, 999));
   
   return await this.findByTimeRange(startOfDay, endOfDay);
-};
-
-Lesson.hasConflict = async function(startTime, endTime, excludeLessonId = null) {
-  const whereClause = {
-    [sequelize.Sequelize.Op.or]: [
-      {
-        start_time: {
-          [sequelize.Sequelize.Op.between]: [startTime, endTime]
-        }
-      },
-      {
-        end_time: {
-          [sequelize.Sequelize.Op.between]: [startTime, endTime]
-        }
-      },
-      {
-        [sequelize.Sequelize.Op.and]: [
-          {
-            start_time: {
-              [sequelize.Sequelize.Op.lte]: startTime
-            }
-          },
-          {
-            end_time: {
-              [sequelize.Sequelize.Op.gte]: endTime
-            }
-          }
-        ]
-      }
-    ],
-    status: ['scheduled', 'confirmed', 'in_progress']
-  };
-  
-  if (excludeLessonId) {
-    whereClause.id = {
-      [sequelize.Sequelize.Op.ne]: excludeLessonId
-    };
-  }
-  
-  const conflicts = await this.findAll({ where: whereClause });
-  return conflicts.length > 0;
 };
 
 module.exports = Lesson; 

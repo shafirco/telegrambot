@@ -4,6 +4,7 @@ const schedulerService = require('../../services/scheduler');
 const { Lesson, Waitlist } = require('../../models');
 const logger = require('../../utils/logger');
 const settings = require('../../config/settings');
+const { Op } = require('sequelize');
 
 /**
  * Main callback query handler
@@ -49,6 +50,7 @@ async function handle(ctx) {
         break;
         
       case 'waitlist_join':
+      case 'join_waitlist':
         await handleWaitlistJoin(ctx, student);
         break;
         
@@ -84,6 +86,10 @@ async function handle(ctx) {
           await handleCancelLesson(ctx, callbackData, student);
         } else if (callbackData.startsWith('confirm_')) {
           await handleConfirm(ctx, callbackData, student);
+        } else if (callbackData.startsWith('waitlist_day_')) {
+          await handleWaitlistDay(ctx, student);
+        } else if (callbackData.startsWith('waitlist_time_')) {
+          await handleWaitlistTime(ctx, student);
         } else {
           logger.warn('Unknown callback data:', callbackData);
           await ctx.reply('❓ פעולה לא מוכרת. אנא נסה שוב.');
@@ -155,11 +161,56 @@ async function handleSettings(ctx, student) {
  * Handle waitlist join callback
  */
 async function handleWaitlistJoin(ctx, student) {
-  await ctx.reply(
-    `⏰ <b>הצטרפות לרשימת המתנה</b>\n\nספר לי את הזמן המועדף עליך ואני אוסיף אותך לרשימת המתנה. כשיתפנה מקום, אני אודיע לך מיד!\n\nדוגמה: "אני רוצה להיות ברשימת המתנה לימי שני אחר הצהריים"`,
-    { parse_mode: 'HTML' }
-  );
-  ctx.session.step = 'waitlist_request';
+  try {
+    const message = `
+⏰ <b>הצטרפות לרשימת המתנה</b>
+
+בחר עבור איזה יום אתה רוצה להיות ברשימת המתנה:
+    `;
+
+    // Show available days for next 2 weeks
+    const buttons = [];
+    const nextTwoWeeks = [];
+    
+    for (let i = 1; i <= 14; i++) {
+      const date = moment().add(i, 'days');
+      if (date.day() !== 6) { // Skip Saturday
+        nextTwoWeeks.push({
+          date: date.format('YYYY-MM-DD'),
+          displayName: `${date.format('dddd')} ${date.format('D/M')}`
+        });
+      }
+    }
+
+    // Group by pairs for buttons
+    for (let i = 0; i < nextTwoWeeks.length; i += 2) {
+      const row = [];
+      row.push(Markup.button.callback(
+        nextTwoWeeks[i].displayName,
+        `waitlist_day_${nextTwoWeeks[i].date}`
+      ));
+      
+      if (nextTwoWeeks[i + 1]) {
+        row.push(Markup.button.callback(
+          nextTwoWeeks[i + 1].displayName,
+          `waitlist_day_${nextTwoWeeks[i + 1].date}`
+        ));
+      }
+      
+      buttons.push(row);
+    }
+
+    buttons.push([Markup.button.callback('🔙 חזור', 'book_lesson')]);
+
+    await ctx.editMessageText(message, {
+      parse_mode: 'HTML',
+      reply_markup: Markup.inlineKeyboard(buttons).reply_markup
+    });
+
+  } catch (error) {
+    logger.error('Error in handleWaitlistJoin:', error);
+    await ctx.reply('❌ שגיאה בהצגת רשימת המתנה. אנא נסה שוב.');
+  }
 }
 
 /**
@@ -423,6 +474,176 @@ async function handleBookDifferentTime(ctx, student) {
   ctx.session.step = 'booking_request';
 }
 
+// Handle join waitlist - specific time based
+const handleJoinWaitlist = async (ctx) => {
+  try {
+    const student = ctx.student;
+    
+    const message = `
+⏰ <b>הצטרפות לרשימת המתנה</b>
+
+בחר עבור איזה יום אתה רוצה להיות ברשימת המתנה:
+    `;
+
+    // Show available days for next 2 weeks
+    const buttons = [];
+    const nextTwoWeeks = [];
+    
+    for (let i = 1; i <= 14; i++) {
+      const date = moment().add(i, 'days');
+      if (date.day() !== 6) { // Skip Saturday
+        nextTwoWeeks.push({
+          date: date.format('YYYY-MM-DD'),
+          displayName: `${date.format('dddd')} ${date.format('D/M')}`
+        });
+      }
+    }
+
+    // Group by pairs for buttons
+    for (let i = 0; i < nextTwoWeeks.length; i += 2) {
+      const row = [];
+      row.push(Markup.button.callback(
+        nextTwoWeeks[i].displayName,
+        `waitlist_day_${nextTwoWeeks[i].date}`
+      ));
+      
+      if (nextTwoWeeks[i + 1]) {
+        row.push(Markup.button.callback(
+          nextTwoWeeks[i + 1].displayName,
+          `waitlist_day_${nextTwoWeeks[i + 1].date}`
+        ));
+      }
+      
+      buttons.push(row);
+    }
+
+    buttons.push([Markup.button.callback('🔙 חזור', 'book_lesson')]);
+
+    await ctx.editMessageText(message, {
+      parse_mode: 'HTML',
+      reply_markup: Markup.inlineKeyboard(buttons).reply_markup
+    });
+
+  } catch (error) {
+    logger.error('Error in handleJoinWaitlist:', error);
+    await ctx.reply('❌ שגיאה בהצגת רשימת המתנה. אנא נסה שוב.');
+  }
+};
+
+// Handle waitlist for specific day
+const handleWaitlistDay = async (ctx, student) => {
+  try {
+    const callbackData = ctx.callbackQuery.data;
+    const selectedDate = callbackData.replace('waitlist_day_', ''); // Extract date from callback data
+    
+    const displayDate = moment(selectedDate).format('dddd, D בMMMM');
+    
+    const message = `
+⏰ <b>רשימת המתנה ליום ${displayDate}</b>
+
+בחר את זמן העדיפות שלך:
+    `;
+
+    const buttons = [
+      [
+        Markup.button.callback('🌅 בוקר (9:00-12:00)', `waitlist_time_${selectedDate}_morning`),
+        Markup.button.callback('🌤️ צהריים (12:00-16:00)', `waitlist_time_${selectedDate}_afternoon`)
+      ],
+      [
+        Markup.button.callback('🌆 ערב (16:00-18:00)', `waitlist_time_${selectedDate}_evening`),
+        Markup.button.callback('⚡ כל זמן', `waitlist_time_${selectedDate}_anytime`)
+      ],
+      [Markup.button.callback('🔙 חזור', 'join_waitlist')]
+    ];
+
+    await ctx.editMessageText(message, {
+      parse_mode: 'HTML',
+      reply_markup: Markup.inlineKeyboard(buttons).reply_markup
+    });
+
+  } catch (error) {
+    logger.error('Error in handleWaitlistDay:', error);
+    await ctx.reply('❌ שגיאה בעיבוד היום. אנא נסה שוב.');
+  }
+};
+
+// Handle waitlist time preference
+const handleWaitlistTime = async (ctx, student) => {
+  try {
+    const callbackData = ctx.callbackQuery.data;
+    const parts = callbackData.replace('waitlist_time_', '').split('_');
+    const selectedDate = parts[0];
+    const timePreference = parts[1];
+    
+    const timeRanges = {
+      morning: { start: '09:00', end: '12:00', display: 'בוקר (9:00-12:00)' },
+      afternoon: { start: '12:00', end: '16:00', display: 'צהריים (12:00-16:00)' },
+      evening: { start: '16:00', end: '18:00', display: 'ערב (16:00-18:00)' },
+      anytime: { start: '09:00', end: '18:00', display: 'כל זמן' }
+    };
+
+    const selectedRange = timeRanges[timePreference];
+    const displayDate = moment(selectedDate).format('dddd, D בMMMM');
+
+    // Add to waitlist
+    const startTime = moment(`${selectedDate} ${selectedRange.start}`, 'YYYY-MM-DD HH:mm').toDate();
+    
+    const waitlistEntry = await Waitlist.create({
+      student_id: student.id,
+      preferred_start_time: startTime,
+      preferred_duration: student.preferred_lesson_duration || 60,
+      time_preference: timePreference,
+      preferred_date: selectedDate,
+      urgency_level: 'normal',
+      status: 'active'
+    });
+
+    // Calculate position in waitlist
+    const position = await Waitlist.count({
+      where: {
+        preferred_date: selectedDate,
+        time_preference: timePreference,
+        status: 'active',
+        created_at: {
+          [Op.lte]: waitlistEntry.created_at
+        }
+      }
+    });
+
+    const message = `
+✅ <b>נוספת לרשימת המתנה!</b>
+
+📅 <b>יום:</b> ${displayDate}
+🕐 <b>זמן מועדף:</b> ${selectedRange.display}
+📍 <b>מיקום ברשימה:</b> #${position}
+
+אני אודיע לך מיד כשיתפנה זמן מתאים באותו יום! 🔔
+
+<i>הודעה מאת שפיר</i>
+    `;
+
+    const buttons = Markup.inlineKeyboard([
+      [Markup.button.callback('📚 תאם שיעור אחר', 'book_lesson')],
+      [Markup.button.callback('📅 השיעורים שלי', 'my_schedule')]
+    ]);
+
+    await ctx.editMessageText(message, {
+      parse_mode: 'HTML',
+      reply_markup: buttons.reply_markup
+    });
+
+    logger.botLog('waitlist_joined', student.telegram_id, student.username, 
+      `Joined waitlist for ${selectedDate} ${timePreference}`);
+
+  } catch (error) {
+    logger.error('Error in handleWaitlistTime:', error);
+    await ctx.reply('❌ שגיאה בהוספה לרשימת המתנה. אנא נסה שוב.');
+  }
+};
+
 module.exports = {
-  handle
+  handle,
+  handleJoinWaitlist,
+  handleWaitlistDay,
+  handleWaitlistTime
 }; 

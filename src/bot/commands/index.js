@@ -63,7 +63,7 @@ const start = async (ctx) => {
 // Help command - show available commands and features
 const help = async (ctx) => {
   const helpMessage = `
-❓ <b>עזרה - בוט תיאום שיעורי מתמטיקה</b>
+❓ <b>עזרה - בוט תיאום שיעורי מתמטיקה של שפיר</b>
 
 <b>📚 תיאום שיעורים:</b>
 אתה יכול לדבר איתי בשפה טבעית! פשוט תגיד מתי אתה רוצה שיעור:
@@ -80,7 +80,7 @@ const help = async (ctx) => {
 
 <b>💡 תכונות מתקדמות:</b>
 • 🤖 הבנת שפה טבעית עם AI
-• 📅 סנכרון עם Google Calendar
+• 📅 סנכרון עם גוגל קלנדר
 • ⏰ רשימת המתנה אוטומטית
 • 🔔 תזכורות ממוקדות
 • 📊 מעקב התקדמות
@@ -89,7 +89,7 @@ const help = async (ctx) => {
 אם אתה נתקל בבעיה, פשוט כתוב לי ואני אעזור!
 
 <b>שעות פעילות:</b> ${config.businessHours.start} - ${config.businessHours.end}
-<b>ימי פעילות:</b> ${config.businessHours.days.join(', ')}
+<b>ימי פעילות:</b> ראשון, שני, שלישי, רביעי, חמישי
 `;
 
   const buttons = Markup.inlineKeyboard([
@@ -114,27 +114,27 @@ const book = async (ctx) => {
     const student = ctx.student;
     
     const message = `
-📚 <b>Book a Math Lesson</b>
+📚 <b>תיאום שיעור מתמטיקה</b>
 
-Hi ${student.getDisplayName()}! I'd be happy to help you schedule a lesson.
+היי ${student.getDisplayName()}! אשמח לעזור לך לתאם שיעור.
 
-<b>Tell me when you'd like to have your lesson:</b>
-• "I want a lesson tomorrow at 3 PM"
-• "I'm free next Tuesday afternoon"  
-• "Book me something this Friday after 4"
-• "What times are available this week?"
+<b>אמור לי מתי תרצה את השיעור:</b>
+• "אני רוצה שיעור מחר בשעה 3"
+• "אני פנוי ביום שלישי אחר הצהריים"  
+• "תאם לי משהו ביום שישי אחרי 4"
+• "איזה זמנים פנויים יש השבוע?"
 
-<b>Current Settings:</b>
-• Lesson Duration: ${student.preferred_lesson_duration || config.lessons.defaultDuration} minutes
-• Your Timezone: ${student.timezone || config.teacher.timezone}
+<b>ההגדרות הנוכחיות שלך:</b>
+• אורך שיעור: ${student.preferred_lesson_duration || config.lessons.defaultDuration} דקות
+• איזור הזמן שלך: ${student.timezone || config.teacher.timezone}
 
-Just type your preferred time naturally, and I'll find the best available slots for you! 🕐
+פשוט כתוב לי את הזמן המועדף עליך באופן טבעי, ואני אמצא עבורך את הזמנים הזמינים הטובים ביותר! 🕐
     `;
 
     const buttons = Markup.inlineKeyboard([
-      [Markup.button.callback('📅 Show Available Times', 'show_available_times')],
-      [Markup.button.callback('⏰ Join Waitlist', 'join_waitlist')],
-      [Markup.button.callback('⚙️ Update Preferences', 'settings')]
+      [Markup.button.callback('📅 הצג זמנים זמינים', 'show_available_times')],
+      [Markup.button.callback('⏰ הצטרף לרשימת המתנה', 'join_waitlist')],
+      [Markup.button.callback('⚙️ עדכון העדפות', 'settings')]
     ]);
 
     await ctx.reply(message, {
@@ -148,7 +148,7 @@ Just type your preferred time naturally, and I'll find the best available slots 
 
   } catch (error) {
     logger.error('Error in book command:', error);
-    await ctx.reply('❌ Sorry, something went wrong. Please try again.');
+    await ctx.reply('❌ סליחה, משהו השתבש. אנא נסה שוב.');
   }
 };
 
@@ -160,15 +160,15 @@ const schedule = async (ctx) => {
 
     if (upcomingLessons.length === 0) {
       const message = `
-📅 <b>Your Schedule</b>
+📅 <b>מערכת השעות שלך</b>
 
-You don't have any upcoming lessons scheduled.
+אין לך שיעורים מתוכננים כרגע.
 
-Would you like to book a lesson?
+האם תרצה לתאם שיעור?
       `;
 
       const buttons = Markup.inlineKeyboard([
-        [Markup.button.callback('📚 Book a Lesson', 'book_lesson')]
+        [Markup.button.callback('📚 תאם שיעור', 'book_lesson')]
       ]);
 
       await ctx.reply(message, {
@@ -178,25 +178,24 @@ Would you like to book a lesson?
       return;
     }
 
-    let scheduleMessage = `📅 <b>Your Upcoming Lessons</b>\n\n`;
+    let scheduleMessage = `📅 <b>השיעורים הקרובים שלך</b>\n\n`;
 
     upcomingLessons.forEach((lesson, index) => {
       const startTime = moment(lesson.start_time).tz(student.timezone || config.teacher.timezone);
       const status = lesson.status === 'scheduled' ? '🕐' : lesson.status === 'confirmed' ? '✅' : '📝';
       
-      scheduleMessage += `${status} <b>Lesson ${index + 1}</b>\n`;
-      scheduleMessage += `📅 ${startTime.format('dddd, MMMM Do, YYYY')}\n`;
-      scheduleMessage += `🕐 ${startTime.format('h:mm A')} (${lesson.duration_minutes} min)\n`;
-      scheduleMessage += `📚 ${lesson.subject}${lesson.topic ? ` - ${lesson.topic}` : ''}\n`;
-      scheduleMessage += `📍 ${lesson.location}\n\n`;
+      scheduleMessage += `${status} <b>שיעור ${index + 1}</b>\n`;
+      scheduleMessage += `📅 ${startTime.format('dddd, D בMMMM YYYY')}\n`;
+      scheduleMessage += `🕐 ${startTime.format('HH:mm')} (${lesson.duration_minutes} דקות)\n`;
+      scheduleMessage += `📚 ${lesson.subject}${lesson.topic ? ` - ${lesson.topic}` : ''}\n\n`;
     });
 
     const buttons = Markup.inlineKeyboard([
       [
-        Markup.button.callback('🔄 Reschedule', 'reschedule_lesson'),
-        Markup.button.callback('❌ Cancel', 'cancel_lesson')
+        Markup.button.callback('🔄 שנה מועד', 'reschedule_lesson'),
+        Markup.button.callback('❌ בטל', 'cancel_lesson')
       ],
-      [Markup.button.callback('📚 Book Another', 'book_lesson')]
+      [Markup.button.callback('📚 תאם שיעור נוסף', 'book_lesson')]
     ]);
 
     await ctx.reply(scheduleMessage, {
