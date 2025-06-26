@@ -96,8 +96,8 @@ class NotificationService {
           }
         },
         include: [
-          { model: Student },
-          { model: Lesson }
+          { model: Student, as: 'student' },
+          { model: Lesson, as: 'lesson' }
         ],
         limit: 50 // Process in batches
       });
