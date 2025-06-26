@@ -125,8 +125,7 @@ async function handleBookLesson(ctx, student) {
     { 
       parse_mode: 'HTML',
       reply_markup: Markup.inlineKeyboard([
-        [Markup.button.callback('📅 הצג זמנים זמינים', 'show_available_times')],
-        [Markup.button.callback('⏰ הצטרף לרשימת המתנה', 'waitlist_join')]
+        [Markup.button.callback('📅 הצג את כל הזמנים הזמינים', 'show_available_times')]
       ]).reply_markup
     }
   );
@@ -268,26 +267,25 @@ async function handleShowAvailableTimes(ctx, student) {
   try {
     // Show loading message first
     await ctx.editMessageText(
-      '⏳ <b>טוען זמנים זמינים...</b>\n\nאנא המתן, מחפש עבורך את הזמנים הפנויים הקרובים.',
+      '⏳ <b>טוען זמנים זמינים...</b>\n\nאנא המתן, מחפש עבורך את כל הזמנים הפנויים ב-7 הימים הקרובים.',
       { parse_mode: 'HTML' }
     );
 
-    // Get next available slots with shorter timeout
+    // Get ALL available slots for 7 days
     const availableSlots = await Promise.race([
       schedulerService.findNextAvailableSlots(
         student.preferred_lesson_duration || settings.lessons.defaultDuration,
         7 // Next 7 days
       ),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 8000)) // Reduced to 8 seconds
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 8000))
     ]);
     
     if (availableSlots.length === 0) {
       await ctx.editMessageText(
-        `📅 <b>אין זמנים זמינים</b>\n\nמצטער, אין זמנים פנויים בשבוע הקרוב.\n\nהאם תרצה להצטרף לרשימת המתנה? 📋\n\nבברכה,\nשפיר.`,
+        `📅 <b>אין זמנים זמינים</b>\n\nמצטער, אין זמנים פנויים ב-7 הימים הקרובים.\n\nתוכל לכתוב לי מתי תרצה לתאם והצטרף לרשימת המתנה.\n\nבברכה,\nשפיר.`,
         {
           parse_mode: 'HTML',
           reply_markup: Markup.inlineKeyboard([
-            [Markup.button.callback('⏰ הצטרף לרשימת המתנה', 'waitlist_join')],
             [Markup.button.callback('« חזור לתפריט', 'back_to_menu')]
           ]).reply_markup
         }
@@ -295,31 +293,67 @@ async function handleShowAvailableTimes(ctx, student) {
       return;
     }
     
-    let message = `📅 <b>זמנים זמינים לשיעור</b>\n\nהנה הזמנים הפנויים הקרובים ביותר:\n\n`;
-    const buttons = [];
-    
-    availableSlots.slice(0, 6).forEach((slot, index) => {
+    // Group slots by day for better display
+    const slotsByDay = {};
+    availableSlots.forEach(slot => {
       const slotTime = moment(slot.start).tz(student.timezone || settings.teacher.timezone);
+      const dateKey = slotTime.format('YYYY-MM-DD');
       const dayName = schedulerService.constructor.getHebrewDayName(slotTime.day());
       const monthName = schedulerService.constructor.getHebrewMonthName(slotTime.month());
       
-      message += `${index + 1}. ${dayName}, ${slotTime.date()} ב${monthName} בשעה ${slotTime.format('HH:mm')}\n`;
+      if (!slotsByDay[dateKey]) {
+        slotsByDay[dateKey] = {
+          dayName,
+          monthName,
+          date: slotTime.date(),
+          slots: []
+        };
+      }
+      slotsByDay[dateKey].slots.push(slot);
+    });
+
+    let message = `📅 <b>כל הזמנים הזמינים (7 ימים)</b>\n\n`;
+    const buttons = [];
+    let slotIndex = 0;
+    
+    // Display all slots grouped by day
+    Object.keys(slotsByDay).forEach(dateKey => {
+      const dayData = slotsByDay[dateKey];
+      message += `📆 <b>${dayData.dayName}, ${dayData.date} ב${dayData.monthName}</b>\n`;
       
-      // Store slot data for later use
-      ctx.session = ctx.session || {};
-      ctx.session.availableSlots = ctx.session.availableSlots || [];
-      ctx.session.availableSlots[index] = slot;
+      dayData.slots.forEach(slot => {
+        const slotTime = moment(slot.start).tz(student.timezone || settings.teacher.timezone);
+        message += `   ${slotIndex + 1}. ${slotTime.format('HH:mm')}\n`;
+        
+        // Store slot data for later use
+        ctx.session = ctx.session || {};
+        ctx.session.availableSlots = ctx.session.availableSlots || [];
+        ctx.session.availableSlots[slotIndex] = slot;
+        
+        if (slotIndex < 20) { // Limit to 20 buttons due to Telegram restrictions
+          buttons.push([Markup.button.callback(`📚 ${slotIndex + 1}. ${dayData.dayName} ${slotTime.format('HH:mm')}`, `book_slot_${slotIndex}`)]);
+        }
+        
+        slotIndex++;
+      });
       
-      buttons.push([Markup.button.callback(`📚 תאם זמן ${index + 1}`, `book_slot_${index}`)]);
+      message += '\n';
     });
     
-    message += `\n💰 מחיר שיעור: ${settings.lessons.defaultPrice || 180}₪\n⏱️ אורך שיעור: ${student.preferred_lesson_duration || settings.lessons.defaultDuration} דקות\n\nבברכה,\nשפיר.`;
+    message += `💰 מחיר שיעור: ${settings.lessons.defaultPrice || 180}₪\n⏱️ אורך שיעור: ${student.preferred_lesson_duration || settings.lessons.defaultDuration} דקות\n\nבחר זמן מהרשימה או כתוב לי ישירות! 😊\n\nבברכה,\nשפיר.`;
     
-    buttons.push([Markup.button.callback('« חזור לתפריט', 'back_to_menu')]);
+    // Add buttons in chunks to avoid telegram limits
+    const buttonChunks = [];
+    for (let i = 0; i < buttons.length; i += 2) {
+      buttonChunks.push(buttons.slice(i, i + 2));
+    }
+    
+    // Add navigation buttons
+    buttonChunks.push([Markup.button.callback('« חזור לתפריט', 'back_to_menu')]);
     
     await ctx.editMessageText(message, {
       parse_mode: 'HTML',
-      reply_markup: Markup.inlineKeyboard(buttons).reply_markup
+      reply_markup: Markup.inlineKeyboard(buttonChunks).reply_markup
     });
     
   } catch (error) {
@@ -327,7 +361,7 @@ async function handleShowAvailableTimes(ctx, student) {
     
     try {
       await ctx.editMessageText(
-        '❌ <b>שגיאה בטעינת זמנים</b>\n\nמצטער, הייתה שגיאה בטעינת הזמנים הזמינים.\nאנא נסה שוב מאוחר יותר או כתוב לי ישירות מתי תרצה לתאם.\n\nבברכה,\nשפיר.',
+        '❌ <b>שגיאה בטעינת זמנים</b>\n\nמצטער, הייתה שגיאה בטעינת הזמנים הזמינים.\nתוכל לכתוב לי ישירות מתי תרצה לתאם.\n\nבברכה,\nשפיר.',
         {
           parse_mode: 'HTML',
           reply_markup: Markup.inlineKeyboard([
@@ -337,9 +371,8 @@ async function handleShowAvailableTimes(ctx, student) {
         }
       );
     } catch (editError) {
-      // If we can't edit, send a new message
       await ctx.reply(
-        '❌ מצטער, הייתה שגיאה בטעינת הזמנים. אנא נסה שוב או כתב לי ישירות מתי תרצה לתאם.\n\nבברכה,\nשפיר.'
+        '❌ מצטער, הייתה שגיאה בטעינת הזמנים. תוכל לכתוב לי ישירות מתי תרצה לתאם.\n\nבברכה,\nשפיר.'
       );
     }
   }

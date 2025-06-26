@@ -308,60 +308,77 @@ class AIScheduler {
 
   async generateResponse(schedulingData, availableSlots = [], studentName = '') {
     try {
-      const responsePrompt = ChatPromptTemplate.fromMessages([
-        ['system', `אתה עוזר תיאום שיעורים ידידותי של המורה שפיר. צור תגובה מועילה לתלמיד בהתבסס על בקשת התיאום שלו והאפשרויות הזמינות.
-
-הנחיות:
-- תמיד השב בעברית בלבד!
-- היה חם ומקצועי
-- פנה לתלמיד בשמו כשמסופק
-- הסבר בבירור את האפשרויות הזמינות
-- בקש הבהרה כשצריך
-- הצע חלופות כשהזמנים המועדפים לא זמינים
-- השתמש באימוג'ים במידה והם מתאימים
-- שמור על תגובות קצרות אך מידעיות
-- סיים כל הודעה עם "בברכה, שפיר."
-
-הקשר נוכחי:
-- המורה: שפיר
-- אזור זמן מורה: ${settings.teacher.timezone}
-- שעות פעילות: ${settings.businessHours.start} - ${settings.businessHours.end}
-- ימי עבודה: ${settings.businessHours.days.join(', ')}`],
-        ['human', `ניתוח תיאום: {scheduling_data}
-זמנים זמינים: {available_slots}
-שם התלמיד: {student_name}
-
-צור הודעת תגובה מתאימה בעברית וסיים עם "בברכה, שפיר."`]
-      ]);
-
-      const responseChain = responsePrompt
-        .pipe(this.llm)
-        .pipe(this.outputParser);
-
-      const response = await responseChain.invoke({
-        scheduling_data: JSON.stringify(schedulingData, null, 2),
-        available_slots: JSON.stringify(availableSlots, null, 2),
-        student_name: studentName
-      });
-
-      logger.aiLog('response_generated', JSON.stringify(schedulingData), response.substring(0, 100));
-
-      // ודא שהחתימה קיימת
-      if (!response.includes('בברכה, שפיר')) {
-        return response.trim() + '\n\nבברכה,\nשפיר.';
+      if (!this.llm) {
+        logger.warn('OpenAI not available, using fallback response generation');
+        return this.fallbackResponseGeneration(schedulingData, availableSlots, studentName);
       }
 
-      return response;
+      const prompt = `
+אתה מורה למתמטיקה בשם שפיר, חם ומועיל. ענה בעברית בלבד תמיד!
+
+נתונים על הבקשה:
+- כוונה: ${schedulingData.intent}
+- נימוק: ${schedulingData.reasoning || 'לא צוין'}
+- זמנים זמינים: ${availableSlots.length > 0 ? 'יש זמנים זמינים' : 'אין זמנים זמינים'}
+- שם התלמיד: ${studentName}
+
+הקפד על:
+1. ענה רק בעברית
+2. היה חם ומועיל
+3. תמיד חתום עם "בברכה, שפיר."
+4. אל תציע רשימת המתנה אלא אם צריך
+5. תן מידע מועיל ופרקטי
+
+הודעה מקורית: "${schedulingData.original_message || ''}"
+
+ענה באופן ישיר ומועיל:`;
+
+      const response = await Promise.race([
+        this.llm.invoke([['human', prompt]]),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Response timeout')), 8000))
+      ]);
+
+      const content = response.content;
+      
+      // Ensure proper Hebrew signature
+      if (!content.includes('בברכה, שפיר')) {
+        return content + '\n\nבברכה,\nשפיר.';
+      }
+      
+      return content;
 
     } catch (error) {
       logger.error('Error generating AI response:', error);
-      
-      // Fallback response in Hebrew
-      if (schedulingData.intent === 'book_lesson') {
-        return `שלום${studentName ? ` ${studentName}` : ''}! אשמח לעזור לך לתאם שיעור. תן לי לבדוק איזה זמנים זמינים ואחזור אליך בקרוב. 📚\n\nבברכה,\nשפיר.`;
-      }
-      
-      return `שלום${studentName ? ` ${studentName}` : ''}! קיבלתי את ההודעה שלך לגבי תיאום השיעור. תן לי לעבד את הבקשה ולתת לך את האפשרויות הטובות ביותר. 🕐\n\nבברכה,\nשפיר.`;
+      return this.fallbackResponseGeneration(schedulingData, availableSlots, studentName);
+    }
+  }
+
+  /**
+   * Generate fallback responses when AI is not available
+   */
+  fallbackResponseGeneration(schedulingData, availableSlots = [], studentName = '') {
+    const intent = schedulingData.intent || 'other';
+    const name = studentName || 'חבר';
+
+    switch (intent) {
+      case 'book_lesson':
+        if (availableSlots.length > 0) {
+          return `שלום ${name}! 📚\n\nמצאתי זמנים זמינים עבורך. תוכל לבחור מהאפשרויות שמוצגות או לומר לי איזה זמן הכי מתאים לך.\n\nבברכה,\nשפיר.`;
+        } else {
+          return `שלום ${name}! 📚\n\nהזמן שביקשת תפוס כרגע. תוכל לומר לי זמן אחר שמתאים לך, ואני אבדוק האם הוא פנוי.\n\nבברכה,\nשפיר.`;
+        }
+        
+      case 'check_availability':
+        return `שלום ${name}! 📅\n\nאני בודק עבורך זמנים זמינים. רגע אחד...\n\nבברכה,\nשפיר.`;
+        
+      case 'cancel_lesson':
+        return `שלום ${name}! ❌\n\nאוכל לעזור לך לבטל שיעור. אנא פרט איזה שיעור תרצה לבטל.\n\nבברכה,\nשפיר.`;
+        
+      case 'reschedule_lesson':
+        return `שלום ${name}! 🔄\n\nבוודאי אוכל לעזור לך להעביר שיעור. ספר לי איזה שיעור ולאיזה זמן תרצה להעביר.\n\nבברכה,\nשפיר.`;
+        
+      default:
+        return `שלום ${name}! 😊\n\nאני כאן לעזור לך עם שיעורי מתמטיקה. תוכל לבקש לתאם שיעור, לבדוק זמנים זמינים, או לשאול כל שאלה.\n\nפשוט כתוב מה שאתה צריך!\n\nבברכה,\nשפיר.`;
     }
   }
 

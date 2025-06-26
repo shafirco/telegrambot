@@ -335,17 +335,20 @@ class SchedulerService {
         location: lessonDetails.location || 'אונליין'
       });
 
-      // Create Google Calendar event
+      // Create Google Calendar event with proper timezone
       try {
+        const startMoment = moment(slotDetails.start).tz(settings.teacher.timezone);
+        const endMoment = moment(slotDetails.end).tz(settings.teacher.timezone);
+        
         const calendarEvent = await calendarService.createEvent({
           summary: `שיעור מתמטיקה - ${student.getDisplayName()}`,
           description: `שיעור מתמטיקה עם ${student.getDisplayName()}\n\nמורה: שפיר\nנושא: ${lessonDetails.subject || 'מתמטיקה'}\nטלפון תלמיד: ${student.phone || 'לא צוין'}`,
           start: {
-            dateTime: moment(slotDetails.start).format(),
+            dateTime: startMoment.toISOString(),
             timeZone: settings.teacher.timezone
           },
           end: {
-            dateTime: moment(slotDetails.end).format(),
+            dateTime: endMoment.toISOString(),
             timeZone: settings.teacher.timezone
           },
           attendees: student.email ? [{ email: student.email }] : []
@@ -367,10 +370,18 @@ class SchedulerService {
       }
 
       // Update student statistics
-      await student.increment('total_lessons_booked');
+      try {
+        await student.increment('total_lessons_booked');
+      } catch (statsError) {
+        logger.warn('Failed to update student stats:', statsError);
+      }
 
       // Send notification
-      await notificationService.sendLessonConfirmation(student, lesson);
+      try {
+        await notificationService.sendLessonConfirmation(student, lesson);
+      } catch (notificationError) {
+        logger.warn('Failed to send notification:', notificationError);
+      }
 
       logger.scheduleLog('lesson_booked', {
         lessonId: lesson.id,
@@ -378,15 +389,25 @@ class SchedulerService {
         startTime: slotDetails.start
       });
 
+      const slotTime = moment(slotDetails.start).tz(student.timezone || settings.teacher.timezone);
+      const dayName = this.getHebrewDayName(slotTime.day());
+      const monthName = this.getHebrewMonthName(slotTime.month());
+
       return {
         success: true,
         lesson,
-        message: `✅ השיעור נקבע בהצלחה!\n\n📅 ${moment(slotDetails.start).tz(student.timezone).format('dddd, D בMMMM בשעה HH:mm')}\n⏱️ אורך: ${slotDetails.duration} דקות\n\nתקבל תזכורת לפני השיעור! 🔔`
+        message: `🎉 השיעור נתאם בהצלחה!\n\n📅 תאריך: ${dayName}, ${slotTime.date()} ב${monthName}\n⏰ שעה: ${slotTime.format('HH:mm')}\n⏱️ אורך: ${slotDetails.duration} דקות\n💰 מחיר: ${settings.lessons.defaultPrice}₪\n\n📧 תקבל תזכורת לפני השיעור!\n🗓️ השיעור נוסף ליומן Google שלי.\n\nמצפה לראותך! 📚\n\nבברכה,\nשפיר.`
       };
 
     } catch (error) {
       logger.error('Error booking time slot:', error);
-      throw new Error('נכשל בתיאום השיעור. אנא נסה שוב או פנה לתמיכה.');
+      
+      // Return proper error response instead of throwing
+      return {
+        success: false,
+        error: error.message,
+        message: `❌ מצטער, הייתה בעיה בתיאום השיעור.\nייתכן שהזמן נתפס בינתיים.\n\nאנא נסה לבחור זמן אחר או צור קשר ישירות.\n\nבברכה,\nשפיר.`
+      };
     }
   }
 
@@ -569,20 +590,101 @@ class SchedulerService {
   }
 
   /**
-   * Handle other types of requests
+   * Handle other/general requests with better AI responses
    */
   async handleOtherRequest(schedulingData, student) {
-    const response = await aiScheduler.generateResponse(
-      schedulingData,
-      [],
-      student.getDisplayName()
-    );
+    try {
+      const { reasoning, suggested_responses } = schedulingData;
+      
+      // Generate better AI response based on the request
+      if (!this.aiScheduler) {
+        const AIScheduler = require('../ai/scheduler');
+        this.aiScheduler = new AIScheduler();
+      }
 
-    return {
-      success: true,
-      message: response,
-      type: 'general_response'
-    };
+      const aiResponse = await this.aiScheduler.generateResponse(schedulingData, [], student.getDisplayName());
+      
+      if (aiResponse && !aiResponse.includes('מצטער, הייתה בעיה')) {
+        return {
+          success: true,
+          message: aiResponse,
+          type: 'ai_response'
+        };
+      }
+
+      // Fallback to intelligent responses based on keywords
+      const message = schedulingData.original_message || '';
+      const lowerMessage = message.toLowerCase();
+
+      if (lowerMessage.includes('שלום') || lowerMessage.includes('היי') || lowerMessage.includes('hello')) {
+        return {
+          success: true,
+          message: `שלום ${student.getDisplayName()}! 👋\n\nאני כאן לעזור לך לתאם שיעורי מתמטיקה.\n\nאתה יכול:\n📚 לבקש לתאם שיעור\n📅 לבדוק זמנים זמינים\n📋 לראות את הלוח שלך\n❓ לשאול כל שאלה\n\nפשוט כתוב מה שאתה צריך! 😊\n\nבברכה,\nשפיר.`,
+          type: 'greeting'
+        };
+      }
+
+      if (lowerMessage.includes('זמן') || lowerMessage.includes('זמין') || lowerMessage.includes('פנוי')) {
+        const availableSlots = await this.findNextAvailableSlots(60, 7);
+        if (availableSlots.length > 0) {
+          let slotsText = '📅 הזמנים הזמינים הקרובים:\n\n';
+          availableSlots.slice(0, 5).forEach((slot, index) => {
+            const slotTime = moment(slot.start).tz(settings.teacher.timezone);
+            const dayName = this.getHebrewDayName(slotTime.day());
+            const monthName = this.getHebrewMonthName(slotTime.month());
+            slotsText += `${index + 1}. ${dayName}, ${slotTime.date()} ב${monthName} בשעה ${slotTime.format('HH:mm')}\n`;
+          });
+          slotsText += `\nאם אחד מהזמנים מתאים לך, פשוט כתוב "אני רוצה שיעור ב..." עם הזמן הרצוי.\n\nבברכה,\nשפיר.`;
+          
+          return {
+            success: true,
+            message: slotsText,
+            type: 'availability_check'
+          };
+        }
+      }
+
+      if (lowerMessage.includes('מחיר') || lowerMessage.includes('עולה') || lowerMessage.includes('כמה')) {
+        return {
+          success: true,
+          message: `💰 מחיר שיעור מתמטיקה:\n\n🕐 שיעור של 60 דקות: ${settings.lessons.defaultPrice}₪\n\n📍 המקום: אונליין (Zoom)\n📚 הנושאים: כל תחומי המתמטיקה\n⏰ גמישות בזמנים\n\nהתשלום יכול להיות לפי שיעור או חבילה חודשית.\n\nבברכה,\nשפיר.`,
+          type: 'pricing_info'
+        };
+      }
+
+      if (lowerMessage.includes('נושא') || lowerMessage.includes('חומר') || lowerMessage.includes('מה לומד')) {
+        return {
+          success: true,
+          message: `📚 הנושאים שאני מלמד:\n\n🔢 אלגברה ומשוואות\n📐 גיאומטריה\n📊 סטטיסטיקה והסתברות\n∫ חשבון דיפרנציאלי ואינטגרלי\n🔺 טריגונומטריה\n📈 פונקציות\n🧮 חשבון בסיסי\n\nכל שיעור מותאם אישית לרמה ולצרכים שלך!\n\nעל איזה נושא תרצה להתמקד?\n\nבברכה,\nשפיר.`,
+          type: 'subjects_info'
+        };
+      }
+
+      // Check if might be scheduling request but failed to parse
+      if (lowerMessage.includes('רוצה') || lowerMessage.includes('צריך') || lowerMessage.includes('אפשר')) {
+        return {
+          success: true,
+          message: `אני רואה שאתה מעוניין בשיעור! 📚\n\nכדי לעזור לך בצורה הטובה ביותר, תוכל לפרט:\n\n📅 איזה יום מתאים לך?\n🕐 איזה שעה בערך?\n📝 יש נושא ספציפי שתרצה להתמקד בו?\n\nלדוגמה: "אני רוצה שיעור ביום רביעי אחר הצהריים על אלגברה"\n\nאני כאן לעזור! 😊\n\nבברכה,\nשפיר.`,
+          type: 'help_scheduling'
+        };
+      }
+
+      // Default helpful response
+      return {
+        success: true,
+        message: `שלום ${student.getDisplayName()}! 😊\n\nאני כאן לעזור לך עם שיעורי מתמטיקה.\n\nאתה יכול:\n📚 לבקש לתאם שיעור חדש\n📅 לבדוק זמנים זמינים\n💡 לשאול שאלות על החומר\n💰 לקבל מידע על מחירים\n\nפשוט כתוב מה שאתה צריך ואני אעזור!\n\nבברכה,\nשפיר.`,
+        type: 'general_help'
+      };
+
+    } catch (error) {
+      logger.error('Error in handleOtherRequest:', error);
+      
+      return {
+        success: true,
+        message: `שלום ${student.getDisplayName()}! 😊\n\nאני כאן לעזור לך עם שיעורי מתמטיקה.\nאתה יכול לשאול אותי כל שאלה או לבקש לתאם שיעור.\n\nבברכה,\nשפיר.`,
+        type: 'general_help'
+      };
+    }
   }
 
   /**
