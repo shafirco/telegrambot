@@ -97,41 +97,21 @@ const settings = {
 
 // Helper functions
 settings.isBusinessDay = (date) => {
-  const momentDate = moment(date).tz(settings.teacher.timezone);
-  const dayName = momentDate.format('dddd').toLowerCase();
+  const dayName = moment(date).format('dddd').toLowerCase();
   return settings.businessHours.days.includes(dayName);
 };
 
-settings.isBusinessHour = (datetime) => {
-  const momentTime = moment(datetime).tz(settings.teacher.timezone);
-  const timeString = momentTime.format('HH:mm');
-  return timeString >= settings.businessHours.start && timeString <= settings.businessHours.end;
-};
-
-settings.getBusinessHoursToday = () => {
-  const today = moment().tz(settings.teacher.timezone);
-  return {
-    start: today.clone().set({
-      hour: parseInt(settings.businessHours.start.split(':')[0]),
-      minute: parseInt(settings.businessHours.start.split(':')[1]),
-      second: 0,
-      millisecond: 0
-    }),
-    end: today.clone().set({
-      hour: parseInt(settings.businessHours.end.split(':')[0]),
-      minute: parseInt(settings.businessHours.end.split(':')[1]),
-      second: 0,
-      millisecond: 0
-    })
-  };
+settings.isBusinessHour = (date) => {
+  const time = moment(date).format('HH:mm');
+  return time >= settings.businessHours.start && time <= settings.businessHours.end;
 };
 
 settings.getNextBusinessDay = (fromDate = new Date()) => {
-  let date = moment(fromDate).tz(settings.teacher.timezone).add(1, 'day');
-  while (!settings.isBusinessDay(date.toDate())) {
-    date.add(1, 'day');
+  let nextDay = moment(fromDate).add(1, 'day');
+  while (!settings.isBusinessDay(nextDay.toDate())) {
+    nextDay.add(1, 'day');
   }
-  return date.toDate();
+  return nextDay.toDate();
 };
 
 module.exports = settings; 
