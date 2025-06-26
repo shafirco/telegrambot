@@ -83,6 +83,16 @@ logger.botLog = (level, userId, username, message, metadata = {}) => {
   });
 };
 
+// Add AI-specific logging
+logger.aiLog = (action, message, response, metadata = {}) => {
+  logger.info(`AI ${action}`, {
+    aiInteraction: true,
+    message: message?.substring(0, 100),
+    response: response?.substring(0, 200),
+    ...metadata
+  });
+};
+
 // Log start-up info
 logger.info('Logger initialized', {
   logLevel: process.env.LOG_LEVEL || 'info',

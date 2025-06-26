@@ -1,20 +1,13 @@
+const { ChatPromptTemplate, MessagesPlaceholder } = require('@langchain/core/prompts');
+const { StringOutputParser } = require('@langchain/core/output_parsers');
 const { ChatOpenAI } = require('@langchain/openai');
-const { ChatPromptTemplate, MessagesPlaceholder } = require('langchain/prompts');
-const { StringOutputParser } = require('langchain/schema/output_parser');
 const { z } = require('zod');
 const chrono = require('chrono-node');
 const moment = require('moment-timezone');
 const logger = require('../utils/logger');
 const settings = require('../config/settings');
 
-// Initialize OpenAI model
-const llm = new ChatOpenAI({
-  openAIApiKey: process.env.OPENAI_API_KEY,
-  modelName: settings.ai.model,
-  temperature: settings.ai.temperature,
-  maxTokens: settings.ai.maxTokens,
-  timeout: settings.ai.timeout
-});
+// Schema and validation code follows...
 
 // Schema for structured scheduling output
 const SchedulingRequestSchema = z.object({
@@ -50,8 +43,22 @@ const SchedulingRequestSchema = z.object({
   suggested_responses: z.array(z.string()).optional()
 });
 
+/**
+ * AI-powered scheduler service for processing natural language scheduling requests
+ */
 class AIScheduler {
   constructor() {
+    this.llm = new ChatOpenAI({
+      modelName: settings.ai.model,
+      temperature: settings.ai.temperature,
+      maxTokens: settings.ai.maxTokens,
+      timeout: settings.ai.timeout,
+      openAIApiKey: process.env.OPENAI_API_KEY
+    });
+
+    this.outputParser = new StringOutputParser();
+    this.chain = null;
+    this.initialized = false;
     this.setupPromptTemplate();
     this.setupChain();
   }
@@ -116,8 +123,8 @@ Example valid JSON response:
 
   setupChain() {
     this.chain = this.promptTemplate
-      .pipe(llm)
-      .pipe(new StringOutputParser());
+      .pipe(this.llm)
+      .pipe(this.outputParser);
   }
 
   async processSchedulingRequest(userMessage, studentProfile = {}) {
@@ -294,8 +301,8 @@ Generate an appropriate response message.`]
       ]);
 
       const responseChain = responsePrompt
-        .pipe(llm)
-        .pipe(new StringOutputParser());
+        .pipe(this.llm)
+        .pipe(this.outputParser);
 
       const response = await responseChain.invoke({
         scheduling_data: JSON.stringify(schedulingData, null, 2),
@@ -337,8 +344,8 @@ Extract lesson preferences as JSON.`]
       ]);
 
       const extractionChain = extractionPrompt
-        .pipe(llm)
-        .pipe(new StringOutputParser());
+        .pipe(this.llm)
+        .pipe(this.outputParser);
 
       const response = await extractionChain.invoke({
         user_message: userMessage,
