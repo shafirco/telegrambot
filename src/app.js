@@ -17,23 +17,37 @@ class Application {
 
   async initialize() {
     try {
+      logger.info('Starting application initialization...');
+      
       // Setup middleware
+      logger.info('Setting up middleware...');
       this.setupMiddleware();
+      logger.info('Middleware setup complete');
       
       // Initialize database
+      logger.info('Initializing database...');
       await this.initializeDatabase();
+      logger.info('Database initialization complete');
       
       // Setup routes
+      logger.info('Setting up routes...');
       this.setupRoutes();
+      logger.info('Routes setup complete');
       
       // Initialize bot
+      logger.info('Initializing Telegram bot...');
       await this.initializeBot();
+      logger.info('Bot initialization complete');
       
       // Start background services
+      logger.info('Starting background services...');
       this.startBackgroundServices();
+      logger.info('Background services started');
       
       // Setup graceful shutdown
+      logger.info('Setting up graceful shutdown handlers...');
       this.setupGracefulShutdown();
+      logger.info('Graceful shutdown setup complete');
       
       logger.info('Application initialized successfully');
     } catch (error) {
@@ -102,14 +116,22 @@ class Application {
 
   async initializeBot() {
     try {
+      logger.info('Initializing Telegram bot...');
+      logger.info(`Environment: ${process.env.NODE_ENV}`);
+      logger.info(`Webhook URL: ${process.env.WEBHOOK_URL || 'Not set'}`);
+      
       // Set webhook for production, use polling for development
       if (process.env.NODE_ENV === 'production' && process.env.WEBHOOK_URL) {
+        logger.info('Setting up webhook for production...');
         await bot.telegram.setWebhook(`${process.env.WEBHOOK_URL}/webhook`);
         logger.info('Telegram webhook set successfully');
       } else {
+        logger.info('Starting bot with polling...');
         await bot.launch();
         logger.info('Telegram bot started with polling');
       }
+      
+      logger.info('Bot initialization method completed');
     } catch (error) {
       logger.error('Failed to initialize Telegram bot:', error);
       throw error;
@@ -178,13 +200,17 @@ class Application {
   }
 
   async start() {
+    logger.info('Starting application...');
     await this.initialize();
+    logger.info('Application initialization completed, starting server...');
     
     this.server = this.app.listen(this.port, () => {
       logger.info(`Server is running on port ${this.port}`);
       logger.info(`Environment: ${process.env.NODE_ENV}`);
       logger.info(`Process ID: ${process.pid}`);
     });
+    
+    logger.info('Server listen call completed');
   }
 }
 
