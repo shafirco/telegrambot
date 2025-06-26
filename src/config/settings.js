@@ -13,7 +13,7 @@ const settings = {
 
   // Business Hours Configuration
   businessHours: {
-    start: process.env.BUSINESS_HOURS_START || '09:00',
+    start: process.env.BUSINESS_HOURS_START || '10:00',
     end: process.env.BUSINESS_HOURS_END || '18:00',
     days: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday'], // Hebrew business days
     timezone: process.env.TEACHER_TIMEZONE || 'Asia/Jerusalem'
@@ -126,6 +126,29 @@ settings.isBusinessDay = (date) => {
   // Sunday=0, Monday=1, ..., Saturday=6
   // Business days: Sunday(0) to Thursday(4)
   return day >= 0 && day <= 4;
+};
+
+settings.isBusinessHour = (date) => {
+  const momentTime = moment(date).tz(settings.teacher.timezone);
+  const hour = momentTime.hour();
+  const minute = momentTime.minute();
+  const currentTimeMinutes = hour * 60 + minute;
+  
+  const [startHour, startMinute] = settings.businessHours.start.split(':').map(Number);
+  const [endHour, endMinute] = settings.businessHours.end.split(':').map(Number);
+  
+  const startTimeMinutes = startHour * 60 + startMinute;
+  const endTimeMinutes = endHour * 60 + endMinute;
+  
+  return currentTimeMinutes >= startTimeMinutes && currentTimeMinutes <= endTimeMinutes;
+};
+
+settings.getNextBusinessDay = (fromDate) => {
+  let nextDay = moment(fromDate).tz(settings.teacher.timezone).add(1, 'day');
+  while (!settings.isBusinessDay(nextDay.toDate())) {
+    nextDay.add(1, 'day');
+  }
+  return nextDay.toDate();
 };
 
 settings.getBusinessDayName = (dayNumber) => {

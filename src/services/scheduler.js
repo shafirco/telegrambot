@@ -159,9 +159,9 @@ class SchedulerService {
       while (currentSlot.isSameOrBefore(lastPossibleStart)) {
         const slotEnd = currentSlot.clone().add(durationMinutes, 'minutes');
         
-        // Check if this slot is in the future (at least 2 hours from now)
-        const hoursUntilSlot = currentSlot.diff(moment(), 'hours');
-        if (hoursUntilSlot >= 2) {
+        // Check if this slot is in the future (at least 30 minutes from now)
+        const minutesUntilSlot = currentSlot.diff(moment(), 'minutes');
+        if (minutesUntilSlot >= 30) {
           
           // Check for conflicts with existing lessons
           const hasConflict = await Lesson.hasConflict(currentSlot.toDate(), slotEnd.toDate());
@@ -192,7 +192,7 @@ class SchedulerService {
             logger.info(`Conflict found at: ${currentSlot.format('YYYY-MM-DD HH:mm')}`);
           }
         } else {
-          logger.info(`Slot too soon (${hoursUntilSlot}h): ${currentSlot.format('YYYY-MM-DD HH:mm')}`);
+          logger.info(`Slot too soon (${minutesUntilSlot}m): ${currentSlot.format('YYYY-MM-DD HH:mm')}`);
         }
         
         // Move to next 30-minute slot
@@ -765,9 +765,10 @@ class SchedulerService {
    */
   async checkTeacherAvailability(startTime, durationMinutes = 60) {
     try {
-      const endTime = moment(startTime).add(durationMinutes, 'minutes');
+      const startMoment = moment(startTime).tz(settings.teacher.timezone);
+      const endMoment = startMoment.clone().add(durationMinutes, 'minutes');
       
-      // Check if it's within business hours
+      // Check if it's within business hours and business days
       if (!settings.isBusinessHour(startTime) || !settings.isBusinessDay(startTime)) {
         return {
           available: false,
@@ -780,13 +781,13 @@ class SchedulerService {
       const conflictingLessons = await Lesson.findAll({
         where: {
           start_time: {
-            [Op.lt]: endTime.toDate()
+            [Op.lt]: endMoment.toDate()
           },
           end_time: {
-            [Op.gt]: moment(startTime).toDate()
+            [Op.gt]: startMoment.toDate()
           },
           status: {
-            [Op.in]: ['scheduled', 'confirmed']
+            [Op.in]: ['scheduled', 'confirmed', 'pending']
           }
         }
       });
@@ -800,33 +801,77 @@ class SchedulerService {
         };
       }
 
-      // Check teacher's specific availability (if manually set)
-      const teacherUnavailable = await TeacherAvailability.findOne({
+      // Check if we have basic recurring availability for this day
+      const dayOfWeek = startMoment.format('dddd').toLowerCase();
+      const dayAvailability = await TeacherAvailability.findOne({
         where: {
+          schedule_type: 'recurring',
+          day_of_week: dayOfWeek,
           start_time: {
-            [Op.lte]: moment(startTime).toDate()
+            [Op.lte]: startMoment.format('HH:mm:ss')
           },
           end_time: {
-            [Op.gte]: endTime.toDate()
+            [Op.gte]: endMoment.format('HH:mm:ss')
           },
-          is_available: false
+          is_available: true,
+          status: 'active'
+        }
+      });
+
+      if (!dayAvailability) {
+        return {
+          available: false,
+          reason: `המורה לא זמין ביום ${this.getHebrewDayName(startMoment.day())}`,
+          nextAvailable: await this.getNextAvailableSlot(startTime, durationMinutes)
+        };
+      }
+
+      // Check for specific unavailability (manual blocks)
+      const teacherUnavailable = await TeacherAvailability.findOne({
+        where: {
+          [Op.or]: [
+            {
+              // Specific date block
+              schedule_type: 'specific_date',
+              specific_date: startMoment.format('YYYY-MM-DD'),
+              start_time: {
+                [Op.lte]: startMoment.format('HH:mm:ss')
+              },
+              end_time: {
+                [Op.gte]: endMoment.format('HH:mm:ss')
+              },
+              is_available: false
+            },
+            {
+              // Date range block
+              schedule_type: 'block',
+              start_date: {
+                [Op.lte]: startMoment.format('YYYY-MM-DD')
+              },
+              end_date: {
+                [Op.gte]: startMoment.format('YYYY-MM-DD')
+              },
+              is_available: false
+            }
+          ]
         }
       });
 
       if (teacherUnavailable) {
         return {
           available: false,
-          reason: teacherUnavailable.reason || 'המורה לא זמין',
-          unavailableUntil: teacherUnavailable.end_time,
+          reason: teacherUnavailable.title || teacherUnavailable.description || 'המורה לא זמין',
+          unavailableUntil: teacherUnavailable.end_date || teacherUnavailable.specific_date,
           nextAvailable: await this.getNextAvailableSlot(startTime, durationMinutes)
         };
       }
 
       return {
         available: true,
-        startTime: moment(startTime).toDate(),
-        endTime: endTime.toDate(),
-        duration: durationMinutes
+        startTime: startMoment.toDate(),
+        endTime: endMoment.toDate(),
+        duration: durationMinutes,
+        availabilitySource: dayAvailability
       };
 
     } catch (error) {

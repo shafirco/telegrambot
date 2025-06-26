@@ -48,19 +48,28 @@ const SchedulingRequestSchema = z.object({
  */
 class AIScheduler {
   constructor() {
-    this.llm = new ChatOpenAI({
-      modelName: 'gpt-3.5-turbo',
-      temperature: 0.3,
-      maxTokens: 500,
-      timeout: 10000,
-      openAIApiKey: process.env.OPENAI_API_KEY
-    });
-
-    this.outputParser = new StringOutputParser();
-    this.chain = null;
-    this.initialized = false;
-    this.setupPromptTemplate();
-    this.setupChain();
+    // Only initialize if API key is available
+    if (process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY !== 'dummy_key_for_testing') {
+      this.llm = new ChatOpenAI({
+        modelName: 'gpt-3.5-turbo',
+        temperature: 0.3,
+        maxTokens: 500,
+        timeout: 10000,
+        openAIApiKey: process.env.OPENAI_API_KEY
+      });
+      
+      this.outputParser = new StringOutputParser();
+      this.chain = null;
+      this.initialized = true;
+      this.setupPromptTemplate();
+      this.setupChain();
+    } else {
+      this.llm = null;
+      this.outputParser = null;
+      this.chain = null;
+      this.initialized = false;
+      console.warn('OpenAI API key not configured. AI features will be disabled.');
+    }
   }
 
   setupPromptTemplate() {
@@ -147,6 +156,12 @@ class AIScheduler {
       logger.aiLog('processing_request', userMessage.substring(0, 100), null, {
         studentId: studentProfile.id
       });
+
+      // If AI is not initialized, use fallback parsing
+      if (!this.initialized) {
+        console.log('AI not available, using fallback parsing');
+        return this.fallbackParsing(userMessage, studentProfile);
+      }
 
       // Prepare context
       const currentDatetime = moment().tz(settings.teacher.timezone).format('YYYY-MM-DD HH:mm:ss');
