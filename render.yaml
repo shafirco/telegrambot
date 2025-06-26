@@ -1,0 +1,53 @@
+services:
+  - type: web
+    name: math-tutor-bot
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: WEBHOOK_URL
+        value: https://math-tutor-bot.onrender.com/webhook
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: GOOGLE_CALENDAR_ID
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REFRESH_TOKEN
+        sync: false
+      - key: TEACHER_NAME
+        value: Shafir
+      - key: TEACHER_TIMEZONE
+        value: Asia/Jerusalem
+      - key: BUSINESS_HOURS_START
+        value: "09:00"
+      - key: BUSINESS_HOURS_END
+        value: "18:00"
+      - key: WORKING_DAYS
+        value: sunday,monday,tuesday,wednesday,thursday
+      - key: DEFAULT_LESSON_DURATION
+        value: "60"
+      - key: BOOKING_ADVANCE_DAYS
+        value: "30"
+      - key: REMINDER_HOURS_BEFORE
+        value: "24"
+      - key: WAITLIST_NOTIFICATION_ENABLED
+        value: "true"
+      - key: OPENAI_MODEL
+        value: gpt-4-turbo-preview
+      - key: MAX_TOKENS
+        value: "500"
+      - key: TEMPERATURE
+        value: "0.7"
+      - key: AI_RESPONSE_TIMEOUT
+        value: "10000"
+    healthCheckPath: /health 

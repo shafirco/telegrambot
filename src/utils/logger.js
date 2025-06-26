@@ -73,16 +73,21 @@ const logger = winston.createLogger({
   exitOnError: false
 });
 
-// Add method for logging bot interactions
-logger.botLog = (action, userId, userName, message, metadata = {}) => {
-  logger.info(`Bot ${action}`, {
+// Add specialized bot logging
+logger.botLog = (level, userId, username, message, metadata = {}) => {
+  logger.log(level, `BOT [${userId}@${username || 'unknown'}]: ${message}`, {
+    botInteraction: true,
     userId,
-    userName,
-    message,
-    ...metadata,
-    type: 'bot_interaction'
+    username,
+    ...metadata
   });
 };
+
+// Log start-up info
+logger.info('Logger initialized', {
+  logLevel: process.env.LOG_LEVEL || 'info',
+  nodeEnv: process.env.NODE_ENV || 'development'
+});
 
 // Add method for logging scheduling events
 logger.scheduleLog = (event, details, metadata = {}) => {

@@ -1,54 +1,55 @@
 {
   "name": "telegram-ai-scheduler-bot",
   "version": "1.0.0",
-  "description": "A smart Telegram bot for scheduling private math lessons with AI-powered natural language processing",
+  "description": "AI-powered Telegram bot for scheduling math lessons with Google Calendar integration",
   "main": "src/app.js",
   "scripts": {
-    "start": "node src/app.js",
-    "dev": "nodemon src/app.js",
-    "test": "jest",
-    "setup": "node scripts/setup.js"
+    "start": "NODE_ENV=production node src/app.js",
+    "dev": "NODE_ENV=development node src/app.js",
+    "setup": "node scripts/setup.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
   },
   "keywords": [
     "telegram",
-    "bot",
+    "bot", 
     "ai",
     "scheduler",
-    "langchain",
-    "education",
-    "calendar"
+    "math",
+    "tutoring",
+    "google-calendar",
+    "openai"
   ],
-  "author": "Math Tutor Bot",
+  "author": "Shafir",
   "license": "MIT",
   "dependencies": {
-    "telegraf": "^4.15.4",
-    "langchain": "^0.1.36",
-    "@langchain/openai": "^0.0.28",
-    "openai": "^4.24.1",
-    "googleapis": "^126.0.1",
-    "sqlite3": "^5.1.6",
-    "sequelize": "^6.35.2",
-    "dotenv": "^16.3.1",
-    "node-cron": "^3.0.3",
-    "moment": "^2.29.4",
-    "moment-timezone": "^0.5.43",
-    "chrono-node": "^2.7.0",
-    "axios": "^1.6.2",
     "express": "^4.18.2",
+    "telegraf": "^4.16.3",
+    "dotenv": "^16.4.5",
+    "sequelize": "^6.37.3",
+    "sqlite3": "^5.1.7",
+    "moment-timezone": "^0.5.45",
+    "node-cron": "^3.0.3",
+    "winston": "^3.13.0",
     "helmet": "^7.1.0",
     "cors": "^2.8.5",
-    "winston": "^3.11.0",
-    "joi": "^17.11.0",
-    "zod": "^3.22.4"
+    "googleapis": "^137.0.0",
+    "openai": "^4.52.1",
+    "langchain": "^0.2.5",
+    "@langchain/openai": "^0.2.0"
   },
   "devDependencies": {
-    "nodemon": "^3.0.2",
-    "jest": "^29.7.0",
-    "supertest": "^6.3.3",
-    "eslint": "^8.55.0",
-    "@types/node": "^20.10.4"
+    "nodemon": "^3.1.4"
   },
-  "engines": {
-    "node": ">=18.0.0"
-  }
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/shafirco/telegrambot.git"
+  },
+  "bugs": {
+    "url": "https://github.com/shafirco/telegrambot/issues"
+  },
+  "homepage": "https://github.com/shafirco/telegrambot#readme"
 } 

@@ -123,11 +123,41 @@ class Application {
       // Initialize notification service with bot instance
       notificationService.initialize(bot);
       
-      // Use webhook if WEBHOOK_URL is provided, otherwise use polling
-      if (process.env.WEBHOOK_URL) {
-        logger.info('Setting up webhook...');
-        await bot.telegram.setWebhook(`${process.env.WEBHOOK_URL}/webhook`);
+      // Always clear webhook first to prevent conflicts
+      logger.info('Clearing any existing webhook...');
+      try {
+        await bot.telegram.deleteWebhook();
+        logger.info('Previous webhook cleared');
+      } catch (error) {
+        logger.warn('Could not clear webhook (might not exist):', error.message);
+      }
+      
+      // Force webhook mode if we're in production or have WEBHOOK_URL
+      const useWebhook = process.env.NODE_ENV === 'production' || process.env.WEBHOOK_URL;
+      
+      if (useWebhook && process.env.WEBHOOK_URL) {
+        logger.info('Setting up webhook (production mode)...');
+        const webhookUrl = `${process.env.WEBHOOK_URL}/webhook`;
+        logger.info(`Setting webhook to: ${webhookUrl}`);
+        
+        await bot.telegram.setWebhook(webhookUrl, {
+          allowed_updates: ['message', 'callback_query', 'inline_query']
+        });
         logger.info('Telegram webhook set successfully');
+        
+        // Verify webhook was set
+        try {
+          const webhookInfo = await bot.telegram.getWebhookInfo();
+          logger.info('Webhook verification:', {
+            url: webhookInfo.url,
+            has_custom_certificate: webhookInfo.has_custom_certificate,
+            pending_update_count: webhookInfo.pending_update_count,
+            last_error_date: webhookInfo.last_error_date,
+            last_error_message: webhookInfo.last_error_message
+          });
+        } catch (error) {
+          logger.warn('Could not verify webhook:', error.message);
+        }
       } else {
         logger.info('Starting bot with polling (development mode)...');
         await bot.launch();
