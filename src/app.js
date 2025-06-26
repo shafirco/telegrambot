@@ -120,6 +120,9 @@ class Application {
       logger.info(`Environment: ${process.env.NODE_ENV}`);
       logger.info(`Webhook URL: ${process.env.WEBHOOK_URL || 'Not set'}`);
       
+      // Initialize notification service with bot instance
+      notificationService.initialize(bot);
+      
       // Use webhook if WEBHOOK_URL is provided, otherwise use polling
       if (process.env.WEBHOOK_URL) {
         logger.info('Setting up webhook...');
