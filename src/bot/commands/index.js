@@ -3,7 +3,7 @@ const { Markup } = require('telegraf');
 const schedulerService = require('../../services/scheduler');
 const { Lesson, Waitlist } = require('../../models');
 const logger = require('../../utils/logger');
-const settings = require('../../config/settings');
+const config = require('../../config/settings');
 
 // Start command - welcome new users
 const start = async (ctx) => {
@@ -13,7 +13,7 @@ const start = async (ctx) => {
     
     const welcomeMessage = isReturningUser 
       ? `Welcome back, ${student.getDisplayName()}! 👋`
-      : `Welcome to ${settings.teacher.name}'s Math Tutoring Bot! 🎓\n\nI'm here to help you schedule your math lessons easily using natural language.`;
+      : `Welcome to ${config.teacher.name}'s Math Tutoring Bot! 🎓\n\nI'm here to help you schedule your math lessons easily using natural language.`;
 
     const description = !isReturningUser ? `
 ✨ <b>What I can do:</b>
@@ -30,8 +30,8 @@ You can talk to me naturally! Try saying things like:
 • "What times are available next week?"
 • "I need to cancel my Tuesday lesson"
 
-<b>Business Hours:</b> ${settings.businessHours.start} - ${settings.businessHours.end}
-<b>Available Days:</b> ${settings.businessHours.days.join(', ')}
+<b>Business Hours:</b> ${config.businessHours.start} - ${config.businessHours.end}
+<b>Available Days:</b> ${config.businessHours.days.join(', ')}
 ` : ``;
 
     const buttons = Markup.inlineKeyboard([
@@ -94,7 +94,7 @@ You can book lessons by telling me when you're available in natural language:
 I understand natural language, so feel free to type your requests normally! I can understand dates, times, and scheduling preferences in conversational language.
 
 <b>📞 Support:</b>
-If you need help or have questions, just ask me or contact ${settings.teacher.name} directly.
+If you need help or have questions, just ask me or contact ${config.teacher.name} directly.
     `;
 
     const buttons = Markup.inlineKeyboard([
@@ -133,8 +133,8 @@ Hi ${student.getDisplayName()}! I'd be happy to help you schedule a lesson.
 • "What times are available this week?"
 
 <b>Current Settings:</b>
-• Lesson Duration: ${student.preferred_lesson_duration || settings.lessons.defaultDuration} minutes
-• Your Timezone: ${student.timezone || settings.teacher.timezone}
+• Lesson Duration: ${student.preferred_lesson_duration || config.lessons.defaultDuration} minutes
+• Your Timezone: ${student.timezone || config.teacher.timezone}
 
 Just type your preferred time naturally, and I'll find the best available slots for you! 🕐
     `;
@@ -189,7 +189,7 @@ Would you like to book a lesson?
     let scheduleMessage = `📅 <b>Your Upcoming Lessons</b>\n\n`;
 
     upcomingLessons.forEach((lesson, index) => {
-      const startTime = moment(lesson.start_time).tz(student.timezone || settings.teacher.timezone);
+      const startTime = moment(lesson.start_time).tz(student.timezone || config.teacher.timezone);
       const status = lesson.status === 'scheduled' ? '🕐' : lesson.status === 'confirmed' ? '✅' : '📝';
       
       scheduleMessage += `${status} <b>Lesson ${index + 1}</b>\n`;
@@ -245,9 +245,9 @@ const status = async (ctx) => {
 ${activeWaitlist.length > 0 ? `• Position: #${activeWaitlist[0].position}` : ''}
 
 ⚙️ <b>Preferences:</b>
-• Lesson Duration: ${student.preferred_lesson_duration || settings.lessons.defaultDuration} min
+• Lesson Duration: ${student.preferred_lesson_duration || config.lessons.defaultDuration} min
 • Language: ${student.preferred_language}
-• Timezone: ${student.timezone || settings.teacher.timezone}
+• Timezone: ${student.timezone || config.teacher.timezone}
 
 📱 <b>Last Activity:</b> ${moment(student.last_activity).fromNow()}
     `;
@@ -343,13 +343,13 @@ const settings = async (ctx) => {
 ⚙️ <b>Your Settings</b>
 
 📚 <b>Lesson Preferences:</b>
-• Duration: ${student.preferred_lesson_duration || settings.lessons.defaultDuration} minutes
+• Duration: ${student.preferred_lesson_duration || config.lessons.defaultDuration} minutes
 • Days: ${student.preferred_days?.join(', ') || 'Weekdays'}
 • Time Range: ${student.preferred_time_start || '16:00'} - ${student.preferred_time_end || '19:00'}
 
 🌍 <b>Personal:</b>
 • Language: ${student.preferred_language || 'English'}
-• Timezone: ${student.timezone || settings.teacher.timezone}
+• Timezone: ${student.timezone || config.teacher.timezone}
 
 🔔 <b>Notifications:</b>
 • Reminders: ${student.notification_preferences?.lesson_reminders !== false ? '✅' : '❌'}
@@ -428,7 +428,7 @@ const feedback = async (ctx) => {
 I'd love to hear your thoughts! You can:
 
 📝 <b>Send Feedback:</b>
-Just type your feedback or suggestions and I'll make sure ${settings.teacher.name} receives it.
+Just type your feedback or suggestions and I'll make sure ${config.teacher.name} receives it.
 
 🐛 <b>Report Issues:</b>
 If something isn't working correctly, describe the problem and I'll help resolve it.
