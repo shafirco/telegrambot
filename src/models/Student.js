@@ -62,7 +62,7 @@ const Student = sequelize.define('Student', {
   
   timezone: {
     type: DataTypes.STRING(50),
-    allowNull: true,
+    allowNull: false,
     defaultValue: 'Asia/Jerusalem'
   },
   
@@ -80,7 +80,7 @@ const Student = sequelize.define('Student', {
   preferred_days: {
     type: DataTypes.JSON,
     allowNull: true,
-    defaultValue: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday']
+    defaultValue: ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday']
   },
   
   preferred_time_start: {

@@ -26,22 +26,24 @@ jobs:
       run: npm run validate
       env:
         NODE_ENV: test
-        TELEGRAM_BOT_TOKEN: 12345:dummy_token_for_testing
-        OPENAI_API_KEY: dummy_key_for_testing
+        TELEGRAM_BOT_TOKEN: "12345:dummy_token_for_testing_very_long_token_string"
+        OPENAI_API_KEY: "sk-dummy_key_for_testing_very_long_api_key_string"
         DATABASE_PATH: ":memory:"
         TEACHER_TIMEZONE: Asia/Jerusalem
+        TEACHER_NAME: שפיר
     
-    - name: Run linter
-      run: npm run lint --if-present
+    - name: Run linters
+      run: npm run lint
     
     - name: Run tests
       run: npm test
       env:
         NODE_ENV: test
-        TELEGRAM_BOT_TOKEN: 12345:dummy_token_for_testing
-        OPENAI_API_KEY: dummy_key_for_testing
+        TELEGRAM_BOT_TOKEN: "12345:dummy_token_for_testing_very_long_token_string"
+        OPENAI_API_KEY: "sk-dummy_key_for_testing_very_long_api_key_string"
         DATABASE_PATH: ":memory:"
         TEACHER_TIMEZONE: Asia/Jerusalem
+        TEACHER_NAME: שפיר
 
   deploy:
     needs: test
@@ -55,24 +57,32 @@ jobs:
       run: |
         echo "🚀 Triggering deployment on Render..."
         if [ -n "${{ secrets.RENDER_DEPLOY_HOOK }}" ]; then
-          response=$(curl -s -w "%{http_code}" -X POST "${{ secrets.RENDER_DEPLOY_HOOK }}")
-          http_code=$(echo "$response" | tail -n1)
-          if [ "$http_code" -eq 200 ] || [ "$http_code" -eq 201 ]; then
-            echo "✅ Deployment hook triggered successfully (HTTP $http_code)"
+          response=$(curl -s -o /tmp/response.txt -w "%{http_code}" -X POST "${{ secrets.RENDER_DEPLOY_HOOK }}")
+          echo "📊 Response code: $response"
+          if [ "$response" -eq 200 ] || [ "$response" -eq 201 ] || [ "$response" -eq 204 ]; then
+            echo "✅ Deployment hook triggered successfully (HTTP $response)"
+            echo "📄 Response body:"
+            cat /tmp/response.txt 2>/dev/null || echo "No response body"
           else
-            echo "❌ Deployment hook failed with HTTP $http_code"
+            echo "❌ Deployment hook failed with HTTP $response"
+            echo "📄 Response body:"
+            cat /tmp/response.txt 2>/dev/null || echo "No response body"
             exit 1
           fi
         else
-          echo "❌ RENDER_DEPLOY_HOOK secret not configured"
-          echo "ℹ️ Please add your Render deploy hook URL to GitHub secrets"
-          exit 1
+          echo "⚠️ RENDER_DEPLOY_HOOK secret not configured"
+          echo "ℹ️ Skipping deployment trigger - please add your Render deploy hook URL to GitHub secrets"
         fi
     
     - name: Wait for deployment
       run: |
-        echo "⏳ Waiting for deployment to complete (90 seconds)..."
-        sleep 90
+        echo "⏳ Waiting for deployment to complete (120 seconds)..."
+        sleep 120
+    
+    - name: Install Node.js for health check
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
     
     - name: Health check with retry
       run: |
@@ -80,19 +90,22 @@ jobs:
         health_url="${{ secrets.HEALTH_CHECK_URL || 'https://math-tutor-bot.onrender.com/health' }}"
         echo "Health check URL: $health_url"
         
-        for i in {1..10}; do
-          echo "🔍 Health check attempt $i/10..."
-          if response=$(curl -f -s --max-time 30 "$health_url" 2>&1); then
-            echo "✅ Health check passed!"
-            echo "📊 Response: $response"
+        # Install dependencies for health check script
+        npm ci --production
+        
+        # Run health check with retries
+        for i in {1..12}; do
+          echo "🔍 Health check attempt $i/12..."
+          if node scripts/health-check.js "$health_url"; then
+            echo "✅ Deployment completed successfully!"
             exit 0
           else
-            echo "⏳ Attempt $i failed, retrying in 15 seconds..."
-            sleep 15
+            echo "⏳ Attempt $i failed, retrying in 20 seconds..."
+            sleep 20
           fi
         done
         
-        echo "❌ Health check failed after 10 attempts"
+        echo "❌ Health check failed after 12 attempts"
         echo "🔍 Attempting final diagnostic check..."
         curl -v "$health_url" || true
         echo "ℹ️ The application might still be starting up or there might be a configuration issue"
