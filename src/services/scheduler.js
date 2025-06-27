@@ -61,11 +61,24 @@ class SchedulerService {
     } catch (error) {
       logger.error('Error processing booking request:', error);
       
-      // Fallback response in Hebrew
+      // Enhanced fallback response with better error handling
+      const studentName = student.getDisplayName();
+      let errorMessage;
+      
+      if (error.message && error.message.includes('timeout')) {
+        errorMessage = `שלום ${studentName}! מצטער, הבקשה לקחה יותר זמן מהצפוי. בואו ננסה שוב:\n\n📚 איזה תאריך ושעה תרצה לשיעור?`;
+      } else if (error.message && error.message.includes('API')) {
+        errorMessage = `שלום ${studentName}! יש בעיה זמנית במערכת. אתה יכול לכתוב לי:\n• "אני רוצה שיעור מחר בשעה 3"\n• "מה פנוי השבוע הבא?"`;
+      } else {
+        errorMessage = `שלום ${studentName}! 😊\n\nבואו ננסה שוב - איך אתה רוצה לתאם את השיעור?\n\nדוגמאות:\n• "אני רוצה שיעור ביום שלישי אחרי 4"\n• "מתי יש זמנים פנויים השבוע?"`;
+      }
+      
       return {
         success: false,
-        message: `שלום ${student.getDisplayName()}! מצטער, הייתה בעיה בעיבוד הבקשה שלך. אנא נסה שוב או צור קשר ישירות.\n\nבברכה,\nשפיר.`,
-        requiresFollowUp: true
+        message: errorMessage,
+        type: 'error_recovery',
+        requiresFollowUp: true,
+        errorCode: error.code || 'UNKNOWN_ERROR'
       };
     }
   }

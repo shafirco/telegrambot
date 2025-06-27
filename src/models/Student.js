@@ -57,13 +57,13 @@ const Student = sequelize.define('Student', {
   preferred_language: {
     type: DataTypes.STRING(5),
     allowNull: false,
-    defaultValue: 'en'
+    defaultValue: 'he'
   },
   
   timezone: {
     type: DataTypes.STRING(50),
     allowNull: true,
-    defaultValue: 'America/New_York'
+    defaultValue: 'Asia/Jerusalem'
   },
   
   // Lesson preferences

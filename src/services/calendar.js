@@ -20,7 +20,7 @@ class CalendarService {
       this.auth = new google.auth.OAuth2(
         process.env.GOOGLE_CLIENT_ID,
         process.env.GOOGLE_CLIENT_SECRET,
-        'urn:ietf:wg:oauth:2.0:oob' // For server-side apps
+        process.env.GOOGLE_REDIRECT_URI || 'https://developers.google.com/oauthplayground'
       );
 
       // Set refresh token if available

@@ -51,10 +51,10 @@ class AIScheduler {
     // Only initialize if API key is available
     if (process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY !== 'dummy_key_for_testing') {
       this.llm = new ChatOpenAI({
-        modelName: 'gpt-3.5-turbo',
-        temperature: 0.3,
-        maxTokens: 500,
-        timeout: 10000,
+        modelName: process.env.OPENAI_MODEL || 'gpt-4-turbo-preview',
+        temperature: parseFloat(process.env.AI_TEMPERATURE) || 0.3,
+        maxTokens: parseInt(process.env.AI_MAX_TOKENS) || 500,
+        timeout: parseInt(process.env.AI_TIMEOUT) || 10000,
         openAIApiKey: process.env.OPENAI_API_KEY
       });
       
@@ -254,54 +254,146 @@ class AIScheduler {
   fallbackParsing(userMessage, studentProfile) {
     logger.info('Using fallback parsing for message:', userMessage);
 
-    // Simple keyword-based intent detection for Hebrew and English
+    // Enhanced keyword-based intent detection for Hebrew and English
     const message = userMessage.toLowerCase();
     let intent = 'other';
     let confidence = 0.3;
 
-    // Hebrew keywords
+    // Enhanced Hebrew and English keywords with more variations
     if (message.includes('תאם') || message.includes('שיעור') || message.includes('לתאם') || 
-        message.includes('book') || message.includes('schedule') || message.includes('lesson')) {
+        message.includes('רוצה') || message.includes('צריך') || message.includes('אפשר') ||
+        message.includes('book') || message.includes('schedule') || message.includes('lesson') || 
+        message.includes('want') || message.includes('need')) {
       intent = 'book_lesson';
-      confidence = 0.6;
-    } else if (message.includes('ביטול') || message.includes('לבטל') || message.includes('cancel')) {
+      confidence = 0.7;
+    } else if (message.includes('ביטול') || message.includes('לבטל') || message.includes('מבטל') || 
+               message.includes('cancel') || message.includes('remove')) {
       intent = 'cancel_lesson';
-      confidence = 0.7;
-    } else if (message.includes('לשנות') || message.includes('להעביר') || message.includes('reschedule') || message.includes('change')) {
+      confidence = 0.8;
+    } else if (message.includes('לשנות') || message.includes('להעביר') || message.includes('לדחות') || 
+               message.includes('reschedule') || message.includes('change') || message.includes('move')) {
       intent = 'reschedule_lesson';
-      confidence = 0.7;
+      confidence = 0.8;
     } else if (message.includes('זמינים') || message.includes('פנוי') || message.includes('זמנים') || 
-               message.includes('available') || message.includes('free')) {
+               message.includes('מתי') || message.includes('available') || message.includes('free') || 
+               message.includes('when')) {
       intent = 'check_availability';
-      confidence = 0.6;
-    } else if (message.includes('המתנה') || message.includes('רשימה') || message.includes('wait') || message.includes('list')) {
+      confidence = 0.8;
+    } else if (message.includes('המתנה') || message.includes('רשימה') || message.includes('לחכות') || 
+               message.includes('wait') || message.includes('list') || message.includes('waitlist')) {
       intent = 'join_waitlist';
-      confidence = 0.6;
+      confidence = 0.7;
     }
 
-    // Basic chrono parsing for dates
-    const chronoResults = chrono.parse(userMessage);
-    const datetime_preferences = chronoResults.map(result => ({
-      datetime: moment(result.start.date()).toISOString(),
-      date: moment(result.start.date()).format('YYYY-MM-DD'),
-      time: moment(result.start.date()).format('HH:mm'),
-      flexibility: 'preferred',
-      duration_minutes: studentProfile.preferredDuration || settings.lessons.defaultDuration
-    }));
+    // Enhanced date/time parsing
+    const datetime_preferences = [];
+    
+    try {
+      // Basic chrono parsing for English dates
+      const chronoResults = chrono.parse(userMessage);
+      chronoResults.forEach(result => {
+        const startDate = result.start.date();
+        datetime_preferences.push({
+          datetime: moment(startDate).toISOString(),
+          date: moment(startDate).format('YYYY-MM-DD'),
+          time: moment(startDate).format('HH:mm'),
+          flexibility: 'preferred',
+          duration_minutes: studentProfile.preferredDuration || settings.lessons.defaultDuration
+        });
+      });
+
+      // Enhanced Hebrew time patterns
+      const hebrewTimePatterns = [
+        { pattern: /מחר|tomorrow/, offset: 1, time: '15:00' },
+        { pattern: /היום|today/, offset: 0, time: '16:00' },
+        { pattern: /מחרתיים|day after tomorrow/, offset: 2, time: '15:00' },
+        { pattern: /השבוע הבא|next week/, offset: 7, time: '15:00' },
+        { pattern: /השבוע|this week/, offset: 3, time: '15:00' },
+        { pattern: /(יום )?ראשון|sunday/, dayOfWeek: 0 },
+        { pattern: /(יום )?שני|monday/, dayOfWeek: 1 },
+        { pattern: /(יום )?שלישי|tuesday/, dayOfWeek: 2 },
+        { pattern: /(יום )?רביעי|wednesday/, dayOfWeek: 3 },
+        { pattern: /(יום )?חמישי|thursday/, dayOfWeek: 4 },
+        { pattern: /(יום )?שישי|friday/, dayOfWeek: 5 }
+      ];
+      
+      // Hebrew time expressions
+      const timePatterns = [
+        { pattern: /בבוקר|morning/, hour: 10 },
+        { pattern: /אחר הצהריים|afternoon/, hour: 15 },
+        { pattern: /בערב|evening/, hour: 18 },
+        { pattern: /בלילה|night/, hour: 20 },
+        { pattern: /שעה (\d+)/, match: 1 },
+        { pattern: /(\d+) בבוקר/, match: 1, modifier: 'morning' },
+        { pattern: /(\d+) אחר הצהריים/, match: 1, modifier: 'afternoon' }
+      ];
+      
+      for (const timePattern of hebrewTimePatterns) {
+        const match = timePattern.pattern.exec(message);
+        if (match) {
+          const baseDate = moment().tz(studentProfile.timezone || 'Asia/Jerusalem');
+          let targetDate;
+          
+          if (timePattern.offset !== undefined) {
+            targetDate = baseDate.clone().add(timePattern.offset, 'days');
+          } else if (timePattern.dayOfWeek !== undefined) {
+            targetDate = baseDate.clone().day(timePattern.dayOfWeek);
+            if (targetDate.isBefore(baseDate) || targetDate.isSame(baseDate, 'day')) {
+              targetDate.add(1, 'week');
+            }
+          }
+          
+          if (targetDate) {
+            let hour = 15; // Default hour
+            
+            // Look for time patterns in the same message
+            for (const timePat of timePatterns) {
+              const timeMatch = timePat.pattern.exec(message);
+              if (timeMatch) {
+                if (timePat.match) {
+                  hour = parseInt(timeMatch[timePat.match]);
+                  if (timePat.modifier === 'afternoon' && hour <= 12) {
+                    hour += 12;
+                  }
+                } else if (timePat.hour) {
+                  hour = timePat.hour;
+                }
+                break;
+              }
+            }
+            
+            targetDate.hour(hour).minute(0).second(0);
+            
+            datetime_preferences.push({
+              datetime: targetDate.toISOString(),
+              date: targetDate.format('YYYY-MM-DD'),
+              time: targetDate.format('HH:mm'),
+              flexibility: 'preferred',
+              duration_minutes: studentProfile.preferredDuration || settings.lessons.defaultDuration
+            });
+            confidence = Math.min(confidence + 0.3, 0.95);
+            break;
+          }
+        }
+      }
+    } catch (error) {
+      logger.warn('Error in enhanced fallback time parsing:', error);
+    }
 
     return {
       intent,
       confidence,
-      datetime_preferences: datetime_preferences.length > 0 ? datetime_preferences : [],
+      datetime_preferences,
       lesson_details: {
-        subject: 'math',
+        subject: 'מתמטיקה',
         lesson_type: 'regular'
       },
       urgency: 'medium',
-      reasoning: 'פירוש חלופי בשל שגיאה בעיבוד AI',
+      reasoning: `זיהוי משופר: ${intent} ברמת ביטחון ${confidence}`,
       suggested_responses: [
-        'האם תוכל לציין מתי תרצה לתאם את השיעור?',
-        'איזה תאריך ושעה מתאימים לך?'
+        'אני כאן לעזור! איזה תאריך ושעה הכי נוחים לך?',
+        'בואו נמצא יחד את הזמן המושלם לשיעור',
+        'תוכל להגיד לי "מחר אחרי 3" או "ביום ראשון בערב"'
       ]
     };
   }

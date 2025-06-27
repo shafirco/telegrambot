@@ -19,6 +19,20 @@ class Application {
     try {
       logger.info('Starting application initialization...');
       
+      // Run system validations
+      logger.info('Running system validations...');
+      const validation = require('./utils/validation');
+      const validationResult = await validation.runAllValidations();
+      
+      if (!validationResult.valid) {
+        logger.error('Critical validation issues found:', validationResult.criticalIssues);
+        throw new Error(`Validation failed: ${validationResult.criticalIssues.join(', ')}`);
+      }
+      
+      if (validationResult.warnings.length > 0) {
+        logger.warn('Validation warnings:', validationResult.warnings);
+      }
+      
       // Setup middleware
       logger.info('Setting up middleware...');
       this.setupMiddleware();

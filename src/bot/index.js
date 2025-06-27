@@ -14,19 +14,36 @@ if (!process.env.TELEGRAM_BOT_TOKEN) {
 }
 
 // Create bot instance
-const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN, {
-  telegram: {
-    apiRoot: 'https://api.telegram.org'
-  }
-});
+const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
 
-// Session configuration
+// Enhanced session middleware with timeout and cleanup
 bot.use(session({
   defaultSession: () => ({
     step: null,
     data: {},
-    lastActivity: Date.now()
-  })
+    lastActivity: Date.now(),
+    language: 'he'
+  }),
+  store: {
+    // Simple in-memory store with cleanup
+    data: new Map(),
+    get: function(key) {
+      const session = this.data.get(key);
+      if (session && session.lastActivity && (Date.now() - session.lastActivity) > 30 * 60 * 1000) {
+        // Session expired (30 minutes)
+        this.data.delete(key);
+        return undefined;
+      }
+      return session;
+    },
+    set: function(key, value) {
+      value.lastActivity = Date.now();
+      this.data.set(key, value);
+    },
+    delete: function(key) {
+      this.data.delete(key);
+    }
+  }
 }));
 
 // Global error handler
@@ -43,39 +60,59 @@ bot.catch((error, ctx) => {
   }).catch(console.error);
 });
 
-// Middleware to load user and update activity
+// Enhanced student middleware with better error handling
 bot.use(async (ctx, next) => {
   try {
-    if (ctx.from) {
-      // Find or create student record
-      let student = await Student.findByTelegramId(ctx.from.id);
+    if (!ctx.from || !ctx.from.id) {
+      logger.warn('Received message without user information');
+      return;
+    }
+
+    // Find or create student
+    let student = await Student.findByTelegramId(ctx.from.id);
+    
+    if (!student) {
+      logger.info('Creating new student:', {
+        telegramId: ctx.from.id,
+        username: ctx.from.username,
+        firstName: ctx.from.first_name
+      });
       
-      if (!student) {
-        student = await Student.create({
-          telegram_id: ctx.from.id,
-          username: ctx.from.username,
-          first_name: ctx.from.first_name,
-          last_name: ctx.from.last_name,
-          preferred_language: ctx.from.language_code || 'en'
-        });
-        
-        logger.botLog('user_registered', ctx.from.id, ctx.from.username, 'New user registered');
-      } else {
-        // Update user activity
-        await student.updateActivity();
+      student = await Student.create({
+        telegram_id: ctx.from.id,
+        username: ctx.from.username,
+        first_name: ctx.from.first_name || 'משתמש',
+        last_name: ctx.from.last_name || '',
+        preferred_language: 'he',
+        timezone: 'Asia/Jerusalem'
+      });
+    } else {
+      // Update student activity and info
+      await student.updateActivity();
+      
+      // Update username if changed
+      if (ctx.from.username && ctx.from.username !== student.username) {
+        student.username = ctx.from.username;
+        await student.save();
       }
-      
-      // Attach student to context
-      ctx.student = student;
-      
-      // Log user activity
-      logger.botLog('activity', ctx.from.id, ctx.from.username, ctx.message?.text || ctx.updateType);
+    }
+
+    ctx.student = student;
+    
+    // Set session language if not set
+    if (!ctx.session.language) {
+      ctx.session.language = student.preferred_language || 'he';
     }
     
-    return next();
+    await next();
   } catch (error) {
-    logger.error('Middleware error:', error);
-    return next();
+    logger.error('Error in student middleware:', error);
+    
+    try {
+      await ctx.reply('❌ שגיאה במערכת. אנא נסה שוב או התחל עם /start');
+    } catch (replyError) {
+      logger.error('Failed to send error reply in middleware:', replyError);
+    }
   }
 });
 

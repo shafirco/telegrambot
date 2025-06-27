@@ -3,7 +3,7 @@ services:
     name: math-tutor-bot
     env: node
     plan: free
-    buildCommand: npm install
+    buildCommand: npm ci && npm run validate
     startCommand: npm start
     envVars:
       - key: NODE_ENV
@@ -25,7 +25,7 @@ services:
       - key: GOOGLE_REFRESH_TOKEN
         sync: false
       - key: TEACHER_NAME
-        value: Shafir
+        value: שפיר
       - key: TEACHER_TIMEZONE
         value: Asia/Jerusalem
       - key: BUSINESS_HOURS_START
@@ -50,4 +50,6 @@ services:
         value: "0.7"
       - key: AI_RESPONSE_TIMEOUT
         value: "10000"
+      - key: DATABASE_PATH
+        value: ./data/scheduler.db
     healthCheckPath: /health 

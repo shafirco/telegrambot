@@ -5,10 +5,76 @@ const logger = require('../../utils/logger');
 const moment = require('moment-timezone');
 const settings = require('../../config/settings');
 
+// Input validation and sanitization
+const validateAndSanitizeInput = (message) => {
+  if (!message || typeof message !== 'string') {
+    throw new Error('Invalid message format');
+  }
+  
+  // Basic length validation
+  if (message.length > 1000) {
+    throw new Error('Message too long');
+  }
+  
+  // Remove potentially harmful characters while preserving Hebrew
+  const sanitized = message
+    .replace(/[<>]/g, '') // Remove HTML tags
+    .replace(/javascript:/gi, '') // Remove javascript: URLs
+    .trim();
+  
+  if (sanitized.length === 0) {
+    throw new Error('Empty message');
+  }
+  
+  return sanitized;
+};
+
+// Rate limiting check (simple in-memory implementation)
+const rateLimitMap = new Map();
+
+const checkRateLimit = (telegramId) => {
+  const now = Date.now();
+  const key = telegramId.toString();
+  const limit = rateLimitMap.get(key) || { count: 0, resetTime: now + 60000 }; // 1 minute window
+  
+  if (now > limit.resetTime) {
+    // Reset the limit
+    rateLimitMap.set(key, { count: 1, resetTime: now + 60000 });
+    return true;
+  }
+  
+  if (limit.count >= 20) { // Max 20 messages per minute
+    return false;
+  }
+  
+  limit.count++;
+  rateLimitMap.set(key, limit);
+  return true;
+};
+
 const handleText = async (ctx) => {
   try {
     const student = ctx.student;
-    const message = ctx.message.text;
+    
+    if (!student) {
+      await ctx.reply('❌ שגיאה: לא הצליח לזהות את המשתמש. אנא התחל שוב עם /start');
+      return;
+    }
+    
+    // Rate limiting check
+    if (!checkRateLimit(student.telegram_id)) {
+      await ctx.reply('⚠️ אתה שולח הודעות מהר מדי. אנא המתן רגע ונסה שוב.');
+      return;
+    }
+    
+    let message;
+    try {
+      message = validateAndSanitizeInput(ctx.message.text);
+    } catch (validationError) {
+      logger.warn('Input validation failed:', validationError.message, { telegramId: student.telegram_id });
+      await ctx.reply('❌ שגיאה בפורמט ההודעה. אנא כתוב הודעה תקנית ונסה שוב.');
+      return;
+    }
 
     // Skip if message starts with / (commands are handled elsewhere)
     if (message.startsWith('/')) {
@@ -17,11 +83,25 @@ const handleText = async (ctx) => {
 
     logger.botLog('text_message', student.telegram_id, student.username, message);
 
-    // Show typing indicator
-    await ctx.sendChatAction('typing');
+    // Show typing indicator with timeout
+    const typingPromise = ctx.sendChatAction('typing');
+    const timeoutPromise = new Promise(resolve => setTimeout(resolve, 5000));
+    await Promise.race([typingPromise, timeoutPromise]);
 
-    // Check conversation state
-    const conversationState = ctx.session.step;
+    // Check conversation state with timeout protection
+    const conversationState = ctx.session?.step;
+    const sessionTimeout = 30 * 60 * 1000; // 30 minutes
+    
+    if (ctx.session?.lastActivity && (Date.now() - ctx.session.lastActivity) > sessionTimeout) {
+      ctx.session.step = null;
+      ctx.session.data = {};
+      await ctx.reply('⏰ פג תוקף השיחה. בואו נתחיל מחדש - איך אוכל לעזור?');
+    }
+    
+    // Update session activity
+    if (ctx.session) {
+      ctx.session.lastActivity = Date.now();
+    }
 
     switch (conversationState) {
       case 'booking_request':
@@ -52,7 +132,21 @@ const handleText = async (ctx) => {
 
   } catch (error) {
     logger.error('Error handling text message:', error);
-    await ctx.reply('❌ סליחה, נתקלתי בשגיאה בעיבוד ההודעה שלך. אנא נסה שוב.');
+    
+    // Enhanced error response
+    const errorMessages = [
+      '❌ מצטער, נתקלתי בבעיה זמנית. בואו ננסה שוב!',
+      '🔧 יש בעיה קטנה במערכת. אתה יכול לנסות שוב או לכתוב /start',
+      '⚠️ משהו השתבש. אנא נסה לשלוח את ההודעה שוב.'
+    ];
+    
+    const randomMessage = errorMessages[Math.floor(Math.random() * errorMessages.length)];
+    
+    try {
+      await ctx.reply(randomMessage);
+    } catch (replyError) {
+      logger.error('Failed to send error reply:', replyError);
+    }
   }
 };
 
@@ -488,5 +582,7 @@ const handleLocation = async (ctx) => {
 module.exports = {
   handleText,
   handleContact,
-  handleLocation
+  handleLocation,
+  validateAndSanitizeInput,
+  checkRateLimit
 }; 

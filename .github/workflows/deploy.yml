@@ -3,6 +3,8 @@ name: Deploy to Render
 on:
   push:
     branches: [ main ]
+  pull_request:
+    branches: [ main ]
 
 jobs:
   test:
@@ -20,15 +22,26 @@ jobs:
     - name: Install dependencies
       run: npm ci
     
+    - name: Validate environment configuration
+      run: npm run validate
+      env:
+        NODE_ENV: test
+        TELEGRAM_BOT_TOKEN: 12345:dummy_token_for_testing
+        OPENAI_API_KEY: dummy_key_for_testing
+        DATABASE_PATH: ":memory:"
+        TEACHER_TIMEZONE: Asia/Jerusalem
+    
     - name: Run linter
       run: npm run lint --if-present
     
     - name: Run tests
-      run: npm test --if-present
+      run: npm test
       env:
         NODE_ENV: test
-        TELEGRAM_BOT_TOKEN: test_token
-        OPENAI_API_KEY: test_key
+        TELEGRAM_BOT_TOKEN: 12345:dummy_token_for_testing
+        OPENAI_API_KEY: dummy_key_for_testing
+        DATABASE_PATH: ":memory:"
+        TEACHER_TIMEZONE: Asia/Jerusalem
 
   deploy:
     needs: test
@@ -36,32 +49,51 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     
     steps:
+    - uses: actions/checkout@v4
+    
     - name: Deploy to Render
       run: |
         echo "🚀 Triggering deployment on Render..."
         if [ -n "${{ secrets.RENDER_DEPLOY_HOOK }}" ]; then
-          curl -X POST "${{ secrets.RENDER_DEPLOY_HOOK }}"
-          echo "✅ Deployment hook triggered successfully"
+          response=$(curl -s -w "%{http_code}" -X POST "${{ secrets.RENDER_DEPLOY_HOOK }}")
+          http_code=$(echo "$response" | tail -n1)
+          if [ "$http_code" -eq 200 ] || [ "$http_code" -eq 201 ]; then
+            echo "✅ Deployment hook triggered successfully (HTTP $http_code)"
+          else
+            echo "❌ Deployment hook failed with HTTP $http_code"
+            exit 1
+          fi
         else
           echo "❌ RENDER_DEPLOY_HOOK secret not configured"
+          echo "ℹ️ Please add your Render deploy hook URL to GitHub secrets"
           exit 1
         fi
     
     - name: Wait for deployment
       run: |
-        echo "⏳ Waiting for deployment to complete..."
-        sleep 30
+        echo "⏳ Waiting for deployment to complete (90 seconds)..."
+        sleep 90
     
-    - name: Health check
+    - name: Health check with retry
       run: |
         echo "🔍 Performing health check..."
-        for i in {1..5}; do
-          if curl -f -s https://math-tutor-bot.onrender.com/health > /dev/null 2>&1; then
-            echo "✅ Health check passed"
+        health_url="${{ secrets.HEALTH_CHECK_URL || 'https://math-tutor-bot.onrender.com/health' }}"
+        echo "Health check URL: $health_url"
+        
+        for i in {1..10}; do
+          echo "🔍 Health check attempt $i/10..."
+          if response=$(curl -f -s --max-time 30 "$health_url" 2>&1); then
+            echo "✅ Health check passed!"
+            echo "📊 Response: $response"
             exit 0
+          else
+            echo "⏳ Attempt $i failed, retrying in 15 seconds..."
+            sleep 15
           fi
-          echo "⏳ Attempt $i failed, retrying in 10 seconds..."
-          sleep 10
         done
-        echo "❌ Health check failed after 5 attempts"
-        echo "ℹ️ The application might still be starting up..." 
+        
+        echo "❌ Health check failed after 10 attempts"
+        echo "🔍 Attempting final diagnostic check..."
+        curl -v "$health_url" || true
+        echo "ℹ️ The application might still be starting up or there might be a configuration issue"
+        exit 1 

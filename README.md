@@ -219,6 +219,91 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 For support, please open an issue on GitHub or contact the development team.
 
+## 🛠️ Recent Fixes & Improvements
+
+### ✅ **Critical Issues Resolved:**
+1. **AI Model Configuration** - Now uses GPT-4 Turbo as documented
+2. **Hebrew Language Defaults** - All new users default to Hebrew (he) and Asia/Jerusalem timezone  
+3. **Enhanced Fallback Parsing** - Improved Hebrew natural language understanding
+4. **Input Validation & Security** - Added sanitization and rate limiting
+5. **Error Handling** - Better error messages in Hebrew with graceful degradation
+6. **Session Management** - Added timeout handling and memory leak prevention
+7. **System Validation** - Startup validation checks for environment and configuration
+
+### 🧪 **Testing Added:**
+- Basic unit tests for AI parsing and Hebrew text processing
+- Environment validation tests
+- Input sanitization tests  
+- Error handling verification
+- Hebrew configuration validation
+
+### 🔧 **Usage Instructions:**
+
+#### First Time Setup:
+```bash
+# 1. Install dependencies
+npm install
+
+# 2. Copy and configure environment
+cp env.example .env
+# Edit .env with your actual keys
+
+# 3. Validate configuration  
+npm run validate
+
+# 4. Setup database
+npm run setup
+
+# 5. Run tests
+npm test
+
+# 6. Start the bot
+npm start
+```
+
+#### Testing the Bot:
+Send these Hebrew messages to test AI understanding:
+- `אני רוצה שיעור מחר בשעה 3` (Book lesson tomorrow at 3)
+- `מתי יש זמנים פנויים השבוע?` (When are available times this week?)
+- `אני רוצה לבטל את השיעור ביום שלישי` (Cancel Tuesday lesson)
+
+#### Health Monitoring:
+```bash
+# Check if server is running
+npm run health
+
+# Or use the health check script
+node scripts/health-check.js
+```
+
+## 🚨 **Important Configuration Notes:**
+
+### Environment Variables:
+Ensure these are set correctly in your `.env`:
+```bash
+# Required
+TELEGRAM_BOT_TOKEN=your_bot_token_from_botfather
+OPENAI_API_KEY=sk-your_openai_key
+
+# Hebrew/Israeli Specific  
+TEACHER_TIMEZONE=Asia/Jerusalem
+TEACHER_NAME=שפיר
+DEFAULT_LESSON_DURATION=60
+
+# Google Calendar (Optional but recommended)
+GOOGLE_CLIENT_ID=your_google_client_id
+GOOGLE_CLIENT_SECRET=your_google_client_secret
+GOOGLE_REFRESH_TOKEN=your_refresh_token
+GOOGLE_CALENDAR_ID=your_calendar_id
+```
+
+### Testing Environment:
+For development without real API keys:
+```bash
+OPENAI_API_KEY=dummy_key_for_testing  # Enables fallback mode
+DATABASE_PATH=:memory:                # Use in-memory database
+```
+
 ---
 
 **Made with ❤️ for math teachers and students worldwide** 
