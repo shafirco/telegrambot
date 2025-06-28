@@ -1,7 +1,7 @@
 const moment = require('moment-timezone');
 const { Markup } = require('telegraf');
 const schedulerService = require('../../services/scheduler');
-const { Lesson, Waitlist } = require('../../models');
+const { Lesson, Waitlist, Student } = require('../../models');
 const logger = require('../../utils/logger');
 const settings = require('../../config/settings');
 const { Op } = require('sequelize');
@@ -999,9 +999,159 @@ async function handleSelectTime(ctx, callbackData, student) {
   }
 }
 
+/**
+ * Handle student details update callbacks
+ */
+const handleStudentDetailsUpdate = async (ctx, action) => {
+  try {
+    const student = await Student.findOne({
+      where: { telegram_id: ctx.from.id }
+    });
+
+    if (!student) {
+      await ctx.answerCbQuery('❌ שגיאה: פרופיל לא נמצא');
+      return;
+    }
+
+    switch (action) {
+      case 'update_name':
+        await student.update({
+          current_conversation_state: 'updating_name',
+          conversation_context: { updateField: 'name' }
+        });
+        
+        await ctx.editMessageText(
+          '👤 <b>עדכון שם מלא</b>\n\nכתוב את השם המלא החדש שלך:',
+          { parse_mode: 'HTML' }
+        );
+        break;
+
+      case 'update_phone':
+        await student.update({
+          current_conversation_state: 'updating_phone',
+          conversation_context: { updateField: 'phone' }
+        });
+        
+        await ctx.editMessageText(
+          '📱 <b>עדכון מספר טלפון</b>\n\nכתוב את מספר הטלפון החדש או השתמש בכפתור:',
+          {
+            parse_mode: 'HTML',
+            reply_markup: {
+              keyboard: [[{ text: '📱 שלח מספר טלפון', request_contact: true }]],
+              resize_keyboard: true,
+              one_time_keyboard: true
+            }
+          }
+        );
+        break;
+
+      case 'update_email':
+        await student.update({
+          current_conversation_state: 'updating_email',
+          conversation_context: { updateField: 'email' }
+        });
+        
+        await ctx.editMessageText(
+          '📧 <b>עדכון כתובת אימייל</b>\n\nכתוב את כתובת האימייל החדשה שלך:',
+          { parse_mode: 'HTML' }
+        );
+        break;
+
+      case 'update_address':
+        await student.update({
+          current_conversation_state: 'updating_address',
+          conversation_context: { updateField: 'address' }
+        });
+        
+        await ctx.editMessageText(
+          '📍 <b>עדכון כתובת</b>\n\nכתוב את הכתובת החדשה שלך:',
+          { parse_mode: 'HTML' }
+        );
+        break;
+
+      case 'update_duration':
+        await ctx.editMessageText(
+          '⏰ <b>בחר משך שיעור מועדף:</b>',
+          {
+            parse_mode: 'HTML',
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  { text: '30 דקות', callback_data: 'duration_30' },
+                  { text: '45 דקות', callback_data: 'duration_45' }
+                ],
+                [
+                  { text: '60 דקות', callback_data: 'duration_60' },
+                  { text: '90 דקות', callback_data: 'duration_90' }
+                ],
+                [
+                  { text: '120 דקות', callback_data: 'duration_120' }
+                ],
+                [
+                  { text: '🔙 חזור', callback_data: 'update_details' }
+                ]
+              ]
+            }
+          }
+        );
+        break;
+
+      case 'duration_30':
+      case 'duration_45':
+      case 'duration_60':
+      case 'duration_90':
+      case 'duration_120':
+        const duration = parseInt(action.split('_')[1]);
+        await student.update({ preferred_lesson_duration: duration });
+        
+        await ctx.answerCbQuery(`✅ משך שיעור עודכן ל-${duration} דקות`);
+        await ctx.editMessageText(
+          `✅ <b>עודכן בהצלחה!</b>\n\nמשך השיעור המועדף שלך: ${duration} דקות`,
+          {
+            parse_mode: 'HTML',
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: '🔙 חזור לעדכון פרטים', callback_data: 'update_details' }]
+              ]
+            }
+          }
+        );
+        break;
+
+      case 'details_done':
+        await ctx.editMessageText(
+          '✅ <b>עדכון פרטים הושלם!</b>\n\nאתה יכול להתחיל לתאם שיעורים או לבדוק את הזמנים הפנויים.',
+          {
+            parse_mode: 'HTML',
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  { text: '📚 תאם שיעור', callback_data: 'book_lesson' },
+                  { text: '📅 זמנים פנויים', callback_data: 'show_available_times' }
+                ]
+              ]
+            }
+          }
+        );
+        break;
+
+      default:
+        await ctx.answerCbQuery('❌ פעולה לא מוכרת');
+        break;
+    }
+
+    await ctx.answerCbQuery();
+
+  } catch (error) {
+    logger.error('Error handling student details update:', error);
+    await ctx.answerCbQuery('❌ שגיאה בעדכון הפרטים');
+  }
+};
+
 module.exports = {
   handle,
   handleJoinWaitlist,
   handleWaitlistDay,
-  handleWaitlistTime
+  handleWaitlistTime,
+  handleStudentDetailsUpdate
 }; 

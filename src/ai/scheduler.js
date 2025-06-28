@@ -515,3 +515,137 @@ Extract lesson preferences as JSON.`]
 }
 
 module.exports = new AIScheduler(); 
+
+/**
+ * Enhanced Hebrew NLP with better conversation understanding
+ */
+function enhancedHebrewNLP(text, studentName = null) {
+  const message = text.toLowerCase();
+  
+  // Improved patterns for better conversation flow
+  const patterns = {
+    // Greetings and general conversation
+    greeting: [
+      /שלום/, /היי/, /הלו/, /בוקר טוב/, /ערב טוב/, /לילה טוב/,
+      /מה נשמע/, /מה קורה/, /איך זה הולך/, /מה המצב/
+    ],
+    
+    // Lesson booking with more natural language
+    booking: [
+      /רוצה שיעור/, /צריך שיעור/, /לתאם שיעור/, /לקבוע שיעור/,
+      /בואו נתאם/, /אפשר לתאם/, /מתי אפשר/, /יש לך זמן/,
+      /זמין/, /פנוי/, /אני יכול/, /בא לי/, /מעוניין/
+    ],
+    
+    // Time expressions with Hebrew context
+    timeExpressions: [
+      /מחר/, /מחרתיים/, /היום/, /השבוע/, /שבוע הבא/,
+      /ביום (\w+)/, /ב(\w+)/, /בשעה (\d+)/, /ב(\d+)/,
+      /בצהריים/, /אחר הצהריים/, /בערב/, /בבוקר/,
+      /יום ראשון/, /יום שני/, /יום שלישי/, /יום רביעי/, /יום חמישי/
+    ],
+    
+    // Availability check
+    availability: [
+      /זמנים פנויים/, /מתי פנוי/, /מתי זמין/, /איזה זמנים/,
+      /תראה לי/, /אפשרויות/, /מה יש לך/, /מתי אפשר/
+    ],
+    
+    // Cancellation
+    cancellation: [
+      /לבטל/, /ביטול/, /לא יכול/, /לא אוכל/, /לא יגיע/,
+      /משהו קרה/, /נדחה/, /לדחות/
+    ],
+    
+    // Questions and help
+    questions: [
+      /איך/, /מה/, /למה/, /מתי/, /איפה/, /כמה/, /מי/,
+      /עזרה/, /לא מבין/, /לא הבנתי/, /תסביר/, /תעזור/
+    ],
+    
+    // Thanks and politeness
+    thanks: [
+      /תודה/, /תודות/, /שלום/, /בסדר/, /מעולה/, /נהדר/,
+      /אוקיי/, /ברור/, /הבנתי/, /כן/, /לא/
+    ]
+  };
+  
+  // Calculate intent scores
+  const intents = {};
+  
+  for (const [intent, regexes] of Object.entries(patterns)) {
+    intents[intent] = regexes.some(regex => regex.test(message)) ? 1 : 0;
+  }
+  
+  // Enhanced context understanding
+  const context = {
+    hasTimeReference: patterns.timeExpressions.some(regex => regex.test(message)),
+    isQuestion: patterns.questions.some(regex => regex.test(message)) || message.includes('?'),
+    isPolite: patterns.thanks.some(regex => regex.test(message)),
+    mentionsName: studentName && message.includes(studentName.toLowerCase()),
+    hasNumbers: /\d+/.test(message),
+    isConversational: patterns.greeting.some(regex => regex.test(message)) || patterns.questions.some(regex => regex.test(message))
+  };
+  
+  // Determine primary intent
+  let primaryIntent = 'general_conversation';
+  let confidence = 0.3;
+  
+  if (intents.booking > 0 || (intents.availability > 0 && context.hasTimeReference)) {
+    primaryIntent = 'lesson_booking';
+    confidence = 0.8;
+  } else if (intents.availability > 0) {
+    primaryIntent = 'check_availability';
+    confidence = 0.7;
+  } else if (intents.cancellation > 0) {
+    primaryIntent = 'cancel_lesson';
+    confidence = 0.7;
+  } else if (intents.greeting > 0 || context.isConversational) {
+    primaryIntent = 'general_conversation';
+    confidence = 0.6;
+  }
+  
+  return {
+    intent: primaryIntent,
+    confidence: confidence,
+    context: context,
+    intents: intents
+  };
+}
+
+/**
+ * Generate more natural AI responses
+ */
+function generateNaturalResponse(intent, studentName = null, context = {}) {
+  const greeting = studentName ? `${studentName},` : '';
+  
+  const responses = {
+    general_conversation: [
+      `שלום ${greeting} אני כאן לעזור לך לתאם שיעורי מתמטיקה! 📚`,
+      `היי ${greeting} מה אני יכול לעזור לך היום? אולי לתאם שיעור?`,
+      `ברוכים הבאים ${greeting}! בוא נתאם שיעור מתמטיקה? 🔢`,
+      `שלום ${greeting}! אני כאן בשבילך. איך אני יכול לעזור?`
+    ],
+    
+    check_availability: [
+      `בטח ${greeting}! בוא אראה לך מה יש לי פנוי השבוע...`,
+      `כמובן! אני בודק עכשיו את הזמנים הפנויים שלי...`,
+      `מצוין ${greeting}! תן לי שנייה לבדוק את לוח הזמנים...`
+    ],
+    
+    lesson_booking: [
+      `נהדר ${greeting}! בוא נתאם לך שיעור. איזה זמן מתאים לך?`,
+      `מעולה! אני מחפש עכשיו זמנים פנויים עבורך...`,
+      `בשמחה ${greeting}! בוא נמצא לך זמן מתאים לשיעור`
+    ],
+    
+    need_more_info: [
+      `${greeting} אני צריך קצת יותר פרטים כדי לעזור לך...`,
+      `תוכל לתת לי עוד פרטים ${greeting}? איזה זמן מעדיף?`,
+      `בוא נפרט ${greeting} - איזה יום ושעה מתאימים לך?`
+    ]
+  };
+  
+  const responseList = responses[intent] || responses.general_conversation;
+  return responseList[Math.floor(Math.random() * responseList.length)];
+} 

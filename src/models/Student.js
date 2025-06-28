@@ -213,7 +213,23 @@ const Student = sequelize.define('Student', {
 
 // Instance methods
 Student.prototype.getDisplayName = function() {
-  return this.full_name || this.first_name || this.username || `User ${this.telegram_id}`;
+  return this.full_name || this.first_name || this.username || `Student ${this.id}`;
+};
+
+Student.prototype.getPreferredDaysArray = function() {
+  if (Array.isArray(this.preferred_days)) {
+    return this.preferred_days;
+  }
+  try {
+    return JSON.parse(this.preferred_days || '[]');
+  } catch {
+    return ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday'];
+  }
+};
+
+Student.prototype.updateLastActivity = async function() {
+  this.last_activity = new Date();
+  return await this.save();
 };
 
 Student.prototype.isActive = function() {

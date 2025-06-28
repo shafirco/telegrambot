@@ -7,6 +7,14 @@ const database = require('./config/database');
 const bot = require('./bot');
 const scheduleService = require('./services/scheduler');
 const notificationService = require('./services/notifications');
+const settings = require('./config/settings');
+
+// Import models to initialize associations
+require('./models');
+
+// Import services
+const calendarService = require('./services/calendar');
+const TeacherAvailability = require('./models/TeacherAvailability');
 
 class Application {
   constructor() {
@@ -62,6 +70,9 @@ class Application {
       logger.info('Setting up graceful shutdown handlers...');
       this.setupGracefulShutdown();
       logger.info('Graceful shutdown setup complete');
+      
+      // Initialize teacher availability
+      await this.initializeTeacherAvailability();
       
       logger.info('Application initialized successfully');
     } catch (error) {
@@ -258,6 +269,50 @@ class Application {
     });
     
     logger.info('Server listen call completed');
+  }
+
+  /**
+   * Initialize teacher availability if not exists
+   */
+  async initializeTeacherAvailability() {
+    try {
+      // Check if we have any teacher availability records
+      const existingRecords = await TeacherAvailability.count();
+      
+      if (existingRecords === 0) {
+        logger.info('Creating default teacher availability records...');
+        
+        // Create availability for business days (Sunday to Thursday)
+        const businessDays = [
+          { name: 'sunday', hebrew: 'ראשון' },
+          { name: 'monday', hebrew: 'שני' },
+          { name: 'tuesday', hebrew: 'שלישי' },
+          { name: 'wednesday', hebrew: 'רביעי' },
+          { name: 'thursday', hebrew: 'חמישי' }
+        ];
+        
+        for (const day of businessDays) {
+          await TeacherAvailability.create({
+            schedule_type: 'recurring',
+            day_of_week: day.name,
+            start_time: settings.businessHours.start + ':00',
+            end_time: settings.businessHours.end + ':00',
+            is_available: true,
+            status: 'active',
+            min_lesson_duration: 30,
+            max_lesson_duration: 120,
+            buffer_after: 15,
+            price_per_hour: settings.lessons.defaultPrice,
+            description: `זמינות רגילה ליום ${day.hebrew}`,
+            priority: 1
+          });
+        }
+        
+        logger.info(`Created availability records for ${businessDays.length} business days`);
+      }
+    } catch (error) {
+      logger.error('Error initializing teacher availability:', error);
+    }
   }
 }
 

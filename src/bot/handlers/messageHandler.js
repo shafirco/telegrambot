@@ -4,6 +4,7 @@ const { Markup } = require('telegraf');
 const logger = require('../../utils/logger');
 const moment = require('moment-timezone');
 const settings = require('../../config/settings');
+const Student = require('../../models/Student');
 
 // Input validation and sanitization
 const validateAndSanitizeInput = (message) => {
@@ -54,8 +55,38 @@ const checkRateLimit = (telegramId) => {
 
 const handleText = async (ctx) => {
   try {
-    const student = ctx.student;
-    
+    logger.messageLog('incoming_message', {
+      telegramId: ctx.from.id,
+      messageText: ctx.message.text || 'contact/media'
+    });
+
+    // Get or create student
+    let student = await Student.findOne({
+      where: { telegram_id: ctx.from.id }
+    });
+
+    if (!student) {
+      student = await Student.create({
+        telegram_id: ctx.from.id,
+        username: ctx.from.username || null,
+        first_name: ctx.from.first_name || 'User',
+        last_name: ctx.from.last_name || null,
+        preferred_language: 'he'
+      });
+      
+      logger.info(`New student created: ${student.id}`);
+    }
+
+    // Update last activity
+    await student.update({ last_activity: new Date() });
+    ctx.student = student; // Make student available in context
+
+    // Handle student registration for new students
+    const isInRegistration = await handleStudentRegistration(ctx, student);
+    if (isInRegistration) {
+      return;
+    }
+
     if (!student) {
       await ctx.reply('❌ שגיאה: לא הצליח לזהות את המשתמש. אנא התחל שוב עם /start');
       return;
@@ -67,6 +98,16 @@ const handleText = async (ctx) => {
       return;
     }
     
+    // Handle contact messages (phone number sharing)
+    if (ctx.message.contact) {
+      return await handleContact(ctx);
+    }
+    
+    // Handle location messages
+    if (ctx.message.location) {
+      return await handleLocation(ctx);
+    }
+
     let message;
     try {
       message = validateAndSanitizeInput(ctx.message.text);
@@ -122,6 +163,22 @@ const handleText = async (ctx) => {
       
       case 'setting_time_range':
         await handleTimeRangeSetting(ctx, message, student);
+        break;
+
+      case 'updating_name':
+        await handleDetailsUpdate(ctx, message, student, 'name');
+        break;
+
+      case 'updating_phone':
+        await handleDetailsUpdate(ctx, message, student, 'phone');
+        break;
+
+      case 'updating_email':
+        await handleDetailsUpdate(ctx, message, student, 'email');
+        break;
+
+      case 'updating_address':
+        await handleDetailsUpdate(ctx, message, student, 'address');
         break;
       
       default:
@@ -579,10 +636,190 @@ const handleLocation = async (ctx) => {
   }
 };
 
+/**
+ * Handle student registration process
+ */
+async function handleStudentRegistration(ctx, student) {
+  try {
+    const currentState = student.current_conversation_state;
+    const context = student.conversation_context || {};
+    
+    // Start registration if this is a new student
+    if (!student.full_name || !student.phone_number) {
+      
+      if (!student.full_name) {
+        await student.update({
+          current_conversation_state: 'awaiting_full_name',
+          conversation_context: { registrationStep: 'name' }
+        });
+        
+        await ctx.reply(
+          '👋 <b>שלום וברוכים הבאים!</b>\n\n' +
+          'אני הבוט של שפיר למתמטיקה! 📐\n\n' +
+          'כדי שאוכל לעזור לך לתאם שיעורים, אני צריך כמה פרטים:\n\n' +
+          '👤 <b>בואו נתחיל - איך קוראים לך?</b>\n' +
+          '<i>כתוב לי את השם המלא שלך</i>',
+          { parse_mode: 'HTML' }
+        );
+        return true;
+      }
+      
+      if (!student.phone_number) {
+        await student.update({
+          current_conversation_state: 'awaiting_phone',
+          conversation_context: { registrationStep: 'phone' }
+        });
+        
+        await ctx.reply(
+          `שלום ${student.full_name}! 😊\n\n` +
+          '📱 <b>עכשיו אני צריך את מספר הטלפון שלך</b>\n' +
+          '<i>כתוב את המספר או לחץ על הכפתור למטה</i>',
+          {
+            parse_mode: 'HTML',
+            reply_markup: {
+              keyboard: [[{ text: '📱 שלח מספר טלפון', request_contact: true }]],
+              resize_keyboard: true,
+              one_time_keyboard: true
+            }
+          }
+        );
+        return true;
+      }
+    }
+    
+    // Handle registration states
+    if (currentState === 'awaiting_full_name') {
+      const fullName = ctx.message.text.trim();
+      if (fullName.length < 2) {
+        await ctx.reply('השם קצר מדי. אנא כתוב את השם המלא שלך:');
+        return true;
+      }
+      
+      await student.update({
+        full_name: fullName,
+        current_conversation_state: 'awaiting_phone',
+        conversation_context: { registrationStep: 'phone' }
+      });
+      
+      await ctx.reply(
+        `נעים להכיר ${fullName}! 😊\n\n` +
+        '📱 <b>עכשיו אני צריך את מספר הטלפון שלך</b>\n' +
+        '<i>כתוב את המספר או לחץ על הכפתור למטה</i>',
+        {
+          parse_mode: 'HTML',
+          reply_markup: {
+            keyboard: [[{ text: '📱 שלח מספר טלפון', request_contact: true }]],
+            resize_keyboard: true,
+            one_time_keyboard: true
+          }
+        }
+      );
+      return true;
+    }
+    
+    if (currentState === 'awaiting_phone') {
+      let phoneNumber = null;
+      
+      if (ctx.message.contact) {
+        phoneNumber = ctx.message.contact.phone_number;
+      } else if (ctx.message.text) {
+        phoneNumber = ctx.message.text.replace(/[^\d+]/g, '');
+      }
+      
+      if (!phoneNumber || phoneNumber.length < 9) {
+        await ctx.reply('מספר הטלפון לא תקין. אנא כתוב מספר תקין או השתמש בכפתור:');
+        return true;
+      }
+      
+      await student.update({
+        phone_number: phoneNumber,
+        current_conversation_state: 'awaiting_class_grade',
+        conversation_context: { registrationStep: 'grade' }
+      });
+      
+      await ctx.reply(
+        '✅ מעולה! נשמר מספר הטלפון\n\n' +
+        '🎓 <b>באיזה כיתה אתה לומד?</b>\n' +
+        '<i>למשל: י"א, י"ב, או תכתוב את השם של הקורס</i>',
+        {
+          parse_mode: 'HTML',
+          reply_markup: {
+            keyboard: [
+              ['ח\'', 'ט\''],
+              ['י\'', 'י"א', 'י"ב'],
+              ['בגרות מתמטיקה', 'אחר']
+            ],
+            resize_keyboard: true,
+            one_time_keyboard: true
+          }
+        }
+      );
+      return true;
+    }
+    
+    if (currentState === 'awaiting_class_grade') {
+      const grade = ctx.message.text.trim();
+      
+      await student.update({
+        notes: `כיתה/קורס: ${grade}`,
+        current_conversation_state: 'awaiting_address',
+        conversation_context: { 
+          registrationStep: 'address',
+          grade: grade
+        }
+      });
+      
+      await ctx.reply(
+        '📚 נרשם!\n\n' +
+        '📍 <b>מה הכתובת שלך?</b>\n' +
+        '<i>כתוב עיר או אזור מגורים (לצורך תיאום שיעורים)</i>',
+        {
+          parse_mode: 'HTML',
+          reply_markup: { remove_keyboard: true }
+        }
+      );
+      return true;
+    }
+    
+    if (currentState === 'awaiting_address') {
+      const address = ctx.message.text.trim();
+      const context = student.conversation_context || {};
+      
+      await student.update({
+        notes: `כיתה/קורס: ${context.grade || 'לא צוין'}\nכתובת: ${address}`,
+        current_conversation_state: null,
+        conversation_context: null
+      });
+      
+      await ctx.reply(
+        '🎉 <b>רישום הושלם בהצלחה!</b>\n\n' +
+        `שלום ${student.full_name}!\n` +
+        'עכשיו אתה יכול לתאם איתי שיעורים! 📖\n\n' +
+        '💡 <b>דוגמאות למה שאתה יכול לכתוב:</b>\n' +
+        '• "אני רוצה שיעור מחר בשעה 4"\n' +
+        '• "תראה לי זמנים פנויים השבוע"\n' +
+        '• "בוא נתאם שיעור ליום רביעי"\n' +
+        '• "איזה זמנים יש לך מחר?"\n\n' +
+        'בברכה,\n' +
+        'שפיר 🤖',
+        { parse_mode: 'HTML' }
+      );
+      return true;
+    }
+    
+    return false;
+  } catch (error) {
+    logger.error('Error in student registration:', error);
+    await ctx.reply('אירעה שגיאה ברישום. אנא נסה שוב.');
+    return true;
+  }
+}
+
 module.exports = {
   handleText,
   handleContact,
   handleLocation,
   validateAndSanitizeInput,
-  checkRateLimit
+  checkRateLimit,
+  handleStudentRegistration
 }; 

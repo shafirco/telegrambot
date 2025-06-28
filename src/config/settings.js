@@ -5,8 +5,8 @@ const settings = {
   teacher: {
     name: 'שפיר',
     timezone: process.env.TEACHER_TIMEZONE || 'Asia/Jerusalem',
-    email: process.env.TEACHER_EMAIL || '',
-    phone: process.env.TEACHER_PHONE || '',
+    email: process.env.TEACHER_EMAIL || 'shafshaf6@gmail.com',
+    phone: process.env.TEACHER_PHONE || '0544271232',
     language: 'he', // Hebrew as primary language
     currency: 'ILS'
   },

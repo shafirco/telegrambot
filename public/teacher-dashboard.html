@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>דשבורד מורה - שפיר מתמטיקה</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            direction: rtl;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+
+        .header h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 2.5rem;
+        }
+
+        .header .subtitle {
+            color: #666;
+            font-size: 1.2rem;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            text-align: center;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+            transition: transform 0.3s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .stat-number {
+            font-size: 3rem;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+
+        .stat-label {
+            color: #666;
+            font-size: 1.1rem;
+        }
+
+        .section {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+        }
+
+        .section h2 {
+            color: #333;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+
+        .table th,
+        .table td {
+            padding: 12px;
+            text-align: right;
+            border-bottom: 1px solid #eee;
+        }
+
+        .table th {
+            background: #f8f9ff;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .table tr:hover {
+            background: #f8f9ff;
+        }
+
+        .btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: background 0.3s ease;
+        }
+
+        .btn:hover {
+            background: #5a6fd8;
+        }
+
+        .btn-danger {
+            background: #e74c3c;
+        }
+
+        .btn-danger:hover {
+            background: #c0392b;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+
+        .error {
+            background: #ffe6e6;
+            border: 1px solid #ff9999;
+            color: #cc0000;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+
+        .refresh-btn {
+            background: #27ae60;
+            margin-bottom: 20px;
+        }
+
+        .refresh-btn:hover {
+            background: #229954;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+            
+            .header h1 {
+                font-size: 2rem;
+            }
+            
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .table {
+                font-size: 0.9rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🧮 דשבורד שפיר</h1>
+            <div class="subtitle">ניהול תלמידים ורשימת המתנה</div>
+        </div>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-number" id="totalStudents">-</div>
+                <div class="stat-label">תלמידים פעילים</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="waitlistCount">-</div>
+                <div class="stat-label">ברשימת המתנה</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="upcomingLessons">-</div>
+                <div class="stat-label">שיעורים קרובים</div>
+            </div>
+        </div>
+
+        <button class="btn refresh-btn" onclick="loadData()">🔄 רענן נתונים</button>
+
+        <div class="section">
+            <h2>📋 רשימת המתנה</h2>
+            <div id="waitlistContent" class="loading">טוען נתונים...</div>
+        </div>
+
+        <div class="section">
+            <h2>👥 תלמידים</h2>
+            <div id="studentsContent" class="loading">טוען נתונים...</div>
+        </div>
+
+        <div class="section">
+            <h2>📅 שיעורים קרובים</h2>
+            <div id="upcomingContent" class="loading">טוען נתונים...</div>
+        </div>
+    </div>
+
+    <script>
+        async function loadData() {
+            try {
+                // Load dashboard stats
+                const dashboardResponse = await fetch('/api/teacher-dashboard');
+                const dashboardData = await dashboardResponse.json();
+                
+                if (dashboardData.success) {
+                    document.getElementById('totalStudents').textContent = dashboardData.dashboard.stats.totalStudents;
+                    document.getElementById('waitlistCount').textContent = dashboardData.dashboard.stats.waitlistCount;
+                    document.getElementById('upcomingLessons').textContent = dashboardData.dashboard.stats.upcomingLessons;
+                    
+                    // Show upcoming lessons
+                    displayUpcomingLessons(dashboardData.dashboard.upcomingLessons);
+                }
+
+                // Load waitlist
+                const waitlistResponse = await fetch('/api/waitlist');
+                const waitlistData = await waitlistResponse.json();
+                
+                if (waitlistData.success) {
+                    displayWaitlist(waitlistData.waitlist);
+                }
+
+                // Load students
+                const studentsResponse = await fetch('/api/students');
+                const studentsData = await studentsResponse.json();
+                
+                if (studentsData.success) {
+                    displayStudents(studentsData.students);
+                }
+
+            } catch (error) {
+                console.error('Error loading data:', error);
+                showError('שגיאה בטעינת הנתונים');
+            }
+        }
+
+        function displayWaitlist(waitlist) {
+            const container = document.getElementById('waitlistContent');
+            
+            if (waitlist.length === 0) {
+                container.innerHTML = '<p>אין תלמידים ברשימת המתנה</p>';
+                return;
+            }
+
+            let html = `
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>מיקום</th>
+                            <th>שם</th>
+                            <th>טלפון</th>
+                            <th>זמנים מועדפים</th>
+                            <th>פעולות</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            waitlist.forEach(entry => {
+                html += `
+                    <tr>
+                        <td>#${entry.position}</td>
+                        <td>${entry.student.name}</td>
+                        <td>${entry.student.phone || '-'}</td>
+                        <td>${entry.preferredTimeStart || '-'} - ${entry.preferredTimeEnd || '-'}</td>
+                        <td>
+                            <button class="btn" onclick="notifyWaitlist(${entry.id})">📞 הודע</button>
+                            <button class="btn btn-danger" onclick="removeFromWaitlist(${entry.id})">❌ הסר</button>
+                        </td>
+                    </tr>
+                `;
+            });
+
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+
+        function displayStudents(students) {
+            const container = document.getElementById('studentsContent');
+            
+            let html = `
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>שם</th>
+                            <th>טלפון</th>
+                            <th>פעילות אחרונה</th>
+                            <th>שיעורים</th>
+                            <th>סטטוס</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            students.slice(0, 20).forEach(student => {
+                const lastActivity = new Date(student.lastActivity).toLocaleDateString('he-IL');
+                html += `
+                    <tr>
+                        <td>${student.name}</td>
+                        <td>${student.phone || '-'}</td>
+                        <td>${lastActivity}</td>
+                        <td>${student.stats.lessonsBooked}</td>
+                        <td>${student.status === 'active' ? '✅ פעיל' : '❌ לא פעיל'}</td>
+                    </tr>
+                `;
+            });
+
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+
+        function displayUpcomingLessons(lessons) {
+            const container = document.getElementById('upcomingContent');
+            
+            if (lessons.length === 0) {
+                container.innerHTML = '<p>אין שיעורים קרובים</p>';
+                return;
+            }
+
+            let html = `
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>תלמיד</th>
+                            <th>תאריך ושעה</th>
+                            <th>משך</th>
+                            <th>טלפון</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            lessons.forEach(lesson => {
+                const startTime = new Date(lesson.startTime).toLocaleString('he-IL');
+                html += `
+                    <tr>
+                        <td>${lesson.student}</td>
+                        <td>${startTime}</td>
+                        <td>${lesson.duration} דקות</td>
+                        <td>${lesson.phone || '-'}</td>
+                    </tr>
+                `;
+            });
+
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+
+        async function notifyWaitlist(entryId) {
+            try {
+                const response = await fetch(`/api/waitlist/${entryId}/notify`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        message: 'זמן התפנה! אתה יכול עכשיו לתאם שיעור.'
+                    })
+                });
+
+                if (response.ok) {
+                    alert('ההודעה נשלחה בהצלחה!');
+                } else {
+                    alert('שגיאה בשליחת ההודעה');
+                }
+            } catch (error) {
+                alert('שגיאה בשליחת ההודעה');
+            }
+        }
+
+        async function removeFromWaitlist(entryId) {
+            if (!confirm('האם אתה בטוח שברצונך להסיר את התלמיד מרשימת המתנה?')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/waitlist/${entryId}`, {
+                    method: 'DELETE'
+                });
+
+                if (response.ok) {
+                    alert('התלמיד הוסר מרשימת המתנה');
+                    loadData(); // Refresh data
+                } else {
+                    alert('שגיאה בהסרה מרשימת המתנה');
+                }
+            } catch (error) {
+                alert('שגיאה בהסרה מרשימת המתנה');
+            }
+        }
+
+        function showError(message) {
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'error';
+            errorDiv.textContent = message;
+            document.querySelector('.container').prepend(errorDiv);
+        }
+
+        // Load data when page loads
+        document.addEventListener('DOMContentLoaded', loadData);
+    </script>
+</body>
+</html> 

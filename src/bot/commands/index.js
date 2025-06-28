@@ -1,7 +1,7 @@
 const moment = require('moment-timezone');
 const { Markup } = require('telegraf');
 const schedulerService = require('../../services/scheduler');
-const { Lesson, Waitlist } = require('../../models');
+const { Lesson, Waitlist, Student } = require('../../models');
 const logger = require('../../utils/logger');
 const config = require('../../config/settings');
 const { Op } = require('sequelize');
@@ -535,6 +535,60 @@ function getHebrewTimePreference(timePreference) {
   return timeMap[timePreference] || timePreference;
 }
 
+/**
+ * Update student details command
+ */
+const updateDetailsCommand = async (ctx) => {
+  try {
+    const student = await Student.findOne({
+      where: { telegram_id: ctx.from.id }
+    });
+
+    if (!student) {
+      await ctx.reply('❌ לא נמצא פרופיל. התחל עם /start תחילה.');
+      return;
+    }
+
+    const currentDetails = `
+📝 <b>הפרטים הנוכחיים שלך:</b>
+
+👤 <b>שם:</b> ${student.full_name || student.first_name || 'לא מוגדר'}
+📱 <b>טלפון:</b> ${student.phone_number || 'לא מוגדר'}
+📧 <b>אימייל:</b> ${student.email || 'לא מוגדר'}
+⏰ <b>משך שיעור מועדף:</b> ${student.preferred_lesson_duration || 60} דקות
+📍 <b>כתובת:</b> ${student.notes ? student.notes.split('\n').find(line => line.includes('כתובת:')) || 'לא מוגדר' : 'לא מוגדר'}
+
+💡 <b>מה תרצה לעדכן?</b>
+    `;
+
+    await ctx.reply(currentDetails, {
+      parse_mode: 'HTML',
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: '👤 שם מלא', callback_data: 'update_name' },
+            { text: '📱 טלפון', callback_data: 'update_phone' }
+          ],
+          [
+            { text: '📧 אימייל', callback_data: 'update_email' },
+            { text: '📍 כתובת', callback_data: 'update_address' }
+          ],
+          [
+            { text: '⏰ משך שיעור מועדף', callback_data: 'update_duration' }
+          ],
+          [
+            { text: '✅ סיום', callback_data: 'details_done' }
+          ]
+        ]
+      }
+    });
+
+  } catch (error) {
+    logger.error('Error in update details command:', error);
+    await ctx.reply('❌ שגיאה בטעינת הפרטים. נסה שוב.');
+  }
+};
+
 module.exports = {
   start,
   help,
@@ -548,5 +602,6 @@ module.exports = {
   admin,
   stats,
   broadcast,
-  viewWaitlist
+  viewWaitlist,
+  updateDetailsCommand
 }; 

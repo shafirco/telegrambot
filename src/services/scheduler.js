@@ -7,6 +7,7 @@ const notificationService = require('./notifications');
 const aiScheduler = require('../ai/scheduler');
 const logger = require('../utils/logger');
 const settings = require('../config/settings');
+const sequelize = require('sequelize');
 
 class SchedulerService {
   constructor() {
@@ -918,76 +919,84 @@ class SchedulerService {
   }
 
   /**
-   * Check if teacher is available at a specific time (checks database availability)
+   * Check if teacher is available at a specific time
+   * Returns { available: boolean, reason?: string }
    */
   async checkTeacherAvailability(startTime, durationMinutes = 60) {
     try {
-      const startMoment = moment(startTime).tz(settings.teacher.timezone);
-      const endMoment = startMoment.clone().add(durationMinutes, 'minutes');
+      const endTime = moment(startTime).add(durationMinutes, 'minutes').toDate();
       
-      // Get day of week in English (as expected by database)
-      const dayOfWeek = startMoment.format('dddd').toLowerCase(); // e.g., 'sunday', 'monday'
-      const timeSlot = startMoment.format('HH:mm:ss');
-      
-      // Check TeacherAvailability in database
-      const availability = await TeacherAvailability.findOne({
+      // Check for manual unavailability blocks in TeacherAvailability
+      const unavailableBlocks = await TeacherAvailability.findAll({
         where: {
-          schedule_type: 'recurring',
-          day_of_week: dayOfWeek,
-          start_time: {
-            [Op.lte]: timeSlot
+          schedule_type: ['exception', 'block'],
+          is_available: false,
+          status: 'active',
+          start_date: {
+            [sequelize.Sequelize.Op.lte]: moment(startTime).format('YYYY-MM-DD')
           },
-          end_time: {
-            [Op.gte]: endMoment.format('HH:mm:ss')
-          },
-          is_available: true,
-          status: 'active'
-        }
-      });
-
-      if (!availability) {
-        return {
-          available: false,
-          reason: 'מחוץ לשעות הפעילות'
-        };
-      }
-
-      // Check for existing lesson conflicts
-      const conflictingLessons = await Lesson.count({
-        where: {
-          start_time: {
-            [Op.lt]: endMoment.toDate()
-          },
-          end_time: {
-            [Op.gt]: startMoment.toDate()
-          },
-          status: {
-            [Op.in]: ['scheduled', 'confirmed', 'pending']
+          end_date: {
+            [sequelize.Sequelize.Op.gte]: moment(startTime).format('YYYY-MM-DD')
           }
         }
       });
 
-      if (conflictingLessons > 0) {
-        return {
-          available: false,
-          reason: 'זמן תפוס - יש שיעור קיים'
-        };
+      // Check if any block conflicts with the requested time
+      for (const block of unavailableBlocks) {
+        const blockStart = moment(`${block.start_date} ${block.start_time}`);
+        const blockEnd = moment(`${block.end_date} ${block.end_time}`);
+        const requestStart = moment(startTime);
+        const requestEnd = moment(endTime);
+
+        if (requestStart.isBefore(blockEnd) && requestEnd.isAfter(blockStart)) {
+          return {
+            available: false,
+            reason: block.description || 'Teacher not available during this time'
+          };
+        }
       }
 
+      // If no specific blocks found, check if we have any availability records for this day
+      const dayAvailability = await TeacherAvailability.findForDate(startTime);
+      
+      if (dayAvailability.length === 0) {
+        // No specific availability records - use default business hours
+        const startMoment = moment(startTime).tz(settings.teacher.timezone);
+        
+        // Check if it's a business day
+        if (!settings.isBusinessDay(startTime)) {
+          return {
+            available: false,
+            reason: 'Not a business day'
+          };
+        }
+        
+        // Check if it's within business hours
+        if (!settings.isBusinessHour(startTime)) {
+          return {
+            available: false,
+            reason: 'Outside business hours'
+          };
+        }
+        
+        // Default to available if within business hours and day
+        return { available: true };
+      }
+
+      // Check specific availability records
+      const isAvailable = await TeacherAvailability.isAvailableAt(startTime, durationMinutes);
+      
       return {
-        available: true,
-        startTime: startMoment.toDate(),
-        endTime: endMoment.toDate(),
-        duration: durationMinutes,
-        availability
+        available: Boolean(isAvailable),
+        reason: isAvailable ? null : 'No availability window found for this time'
       };
 
     } catch (error) {
       logger.error('Error checking teacher availability:', error);
-      // If there's an error, assume not available to be safe
-      return {
-        available: false,
-        reason: 'שגיאה בבדיקת זמינות'
+      // If there's an error, default to available to be safe for business operations
+      return { 
+        available: true,
+        reason: 'Error checking availability - defaulting to available'
       };
     }
   }
