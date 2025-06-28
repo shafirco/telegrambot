@@ -1061,7 +1061,8 @@ async function handleSelectDay(ctx, callbackData, student) {
     ctx.session.availableSlots = [];
     
     availableSlots.forEach((slot, index) => {
-      const slotTime = moment(slot.start).tz(student.timezone || settings.teacher.timezone);
+      // CRITICAL: Always use teacher timezone for display consistency
+      const slotTime = moment(slot.start).tz(settings.teacher.timezone);
       message += `🕐 ${slotTime.format('HH:mm')} - ${slotTime.clone().add(slot.duration, 'minutes').format('HH:mm')}\n`;
       
       ctx.session.availableSlots[index] = slot;
@@ -1592,7 +1593,8 @@ async function handleRescheduleSpecificLesson(ctx, callbackData, student) {
     const keyboard = [];
     
     availableSlots.slice(0, 8).forEach((slot, index) => {
-      const slotStart = moment(slot.start).tz(student.timezone || 'Asia/Jerusalem');
+      // CRITICAL: Always use teacher timezone for display consistency
+      const slotStart = moment(slot.start).tz(settings.teacher.timezone);
       const dayName = slotStart.format('dddd');
       const dateStr = slotStart.format('DD/MM');
       const timeStr = slotStart.format('HH:mm');
@@ -1777,10 +1779,10 @@ async function handleBookAlternative(ctx, callbackData, student) {
         return;
       }
       
-      // Group slots by date
+      // Group slots by date - CRITICAL: Use teacher timezone for consistency
       const slotsByDate = {};
       slots.forEach(slot => {
-        const dateStr = moment(slot.start).tz(student.timezone || 'Asia/Jerusalem').format('YYYY-MM-DD');
+        const dateStr = moment(slot.start).tz(settings.teacher.timezone).format('YYYY-MM-DD');
         if (!slotsByDate[dateStr]) {
           slotsByDate[dateStr] = [];
         }
@@ -1792,7 +1794,8 @@ async function handleBookAlternative(ctx, callbackData, student) {
       
       Object.keys(slotsByDate).slice(0, 6).forEach(dateStr => {
         const dateSlots = slotsByDate[dateStr];
-        const dateMoment = moment(dateStr).tz(student.timezone || 'Asia/Jerusalem');
+        // CRITICAL: Always use teacher timezone for display consistency
+        const dateMoment = moment(dateStr).tz(settings.teacher.timezone);
         const dayName = dateMoment.format('dddd');
         const hebrewDay = getHebrewDayName(dayName);
         const formattedDate = dateMoment.format('DD/MM');
@@ -1801,7 +1804,7 @@ async function handleBookAlternative(ctx, callbackData, student) {
         
         const dayButtons = [];
         dateSlots.slice(0, 4).forEach(slot => {
-          const timeStr = moment(slot.start).tz(student.timezone || 'Asia/Jerusalem').format('HH:mm');
+          const timeStr = moment(slot.start).tz(settings.teacher.timezone).format('HH:mm');
           const slotId = moment(slot.start).valueOf();
           
           message += `   • ${timeStr}\n`;
@@ -1853,7 +1856,8 @@ async function handleBookAlternative(ctx, callbackData, student) {
       });
       
       if (result.success) {
-        const lessonTime = moment(startTime).tz(student.timezone || 'Asia/Jerusalem');
+        // CRITICAL: Always use teacher timezone for display consistency
+        const lessonTime = moment(startTime).tz(settings.teacher.timezone);
         const dayName = getHebrewDayName(lessonTime.format('dddd'));
         const dateStr = lessonTime.format('DD/MM/YYYY');
         const timeStr = lessonTime.format('HH:mm');
