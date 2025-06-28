@@ -346,10 +346,10 @@ class CalendarService {
       const { Student } = require('../models');
 
       // Only update if lesson is not already cancelled
-      if (lesson.status !== 'cancelled') {
+      if (lesson.status !== 'cancelled_by_teacher' && lesson.status !== 'cancelled_by_student') {
         // Update lesson status to cancelled
         await lesson.update({
-          status: 'cancelled',
+          status: 'cancelled_by_teacher',
           cancelled_at: new Date(),
           cancelled_by: 'teacher',
           cancellation_reason: 'Cancelled by teacher in Google Calendar'
