@@ -407,8 +407,11 @@ class AIScheduler {
     const timePatterns = [
       // EXACT TIME PATTERNS FIRST (critical for parsing "15:00", "6:30" etc)
       { pattern: /(\d{1,2}):(\d{2})/, timeFormat: true }, // HH:MM format - MUST BE FIRST
-      { pattern: /שעה (\d{1,2}):(\d{2})/, timeFormat: true }, // "שעה 15:00"
+      { pattern: /בשעה (\d{1,2}):(\d{2})/, timeFormat: true }, // "בשעה 15:00" - CRITICAL MISSING PATTERN
+      { pattern: /שעה (\d{1,2}):(\d{2})/, timeFormat: true }, // "שעה 15:00"  
       { pattern: /ב(\d{1,2}):(\d{2})/, timeFormat: true }, // "ב15:00"
+      { pattern: /בזמן (\d{1,2}):(\d{2})/, timeFormat: true }, // "בזמן 15:00"
+      { pattern: /לשעה (\d{1,2}):(\d{2})/, timeFormat: true }, // "לשעה 15:00"
       
       // GENERAL TIME PATTERNS
       { pattern: /(בצהריים|צהריים|בצהרים|צהרים|noon|בצהריים|צהריים|12|בשתיים עשרה)/, hour: 12 },
@@ -451,7 +454,8 @@ class AIScheduler {
         }
         
         if (targetDate) {
-          let hour = 14; // Default afternoon time
+          let hour = 14; // Default afternoon time  
+          let exactMinuteSet = false; // Track if we set an exact minute
           
           // Look for time in the same message
           for (const timePattern of timePatterns) {
@@ -494,6 +498,7 @@ class AIScheduler {
                     hour += 12; // Default to PM
                   }
                   targetDate.minute(30);
+                  exactMinuteSet = true;
                 } else if (timePattern.modifier === 'quarter_before') {
                   // רבע לפני 5 = 4:45
                   hour = hour - 1;
@@ -501,29 +506,42 @@ class AIScheduler {
                     hour += 12;
                   }
                   targetDate.minute(45);
+                  exactMinuteSet = true;
                 } else if (timePattern.modifier === 'quarter_after') {
                   // רבע אחרי 5 = 5:15
                   if (hour >= 1 && hour <= 7) {
                     hour += 12;
                   }
                   targetDate.minute(15);
+                  exactMinuteSet = true;
                 } else if (timePattern.modifier === 'half_after') {
                   // חצי אחרי 5 = 5:30
                   if (hour >= 1 && hour <= 7) {
                     hour += 12;
                   }
                   targetDate.minute(30);
+                  exactMinuteSet = true;
                 }
               } else if (timePattern.timeFormat) {
+                // Handle exact time formats like "12:00", "בשעה 15:00", etc.
                 hour = parseInt(timeMatch[1]);
                 const minute = parseInt(timeMatch[2]) || 0;
+                
+
                 targetDate.minute(minute);
+                exactMinuteSet = true; // Mark that we set an exact minute
               }
               break;
             }
           }
           
-          targetDate.hour(hour).minute(0).second(0);
+          // Set hour and conditionally set minute based on whether exact time was parsed
+          targetDate.hour(hour).second(0);
+          
+          // Only set minute to 0 if we didn't parse an exact time format
+          if (!exactMinuteSet) {
+            targetDate.minute(0);
+          }
           
           datetime_preferences.push({
             datetime: targetDate.toISOString(),
