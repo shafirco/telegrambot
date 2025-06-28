@@ -803,17 +803,17 @@ async function handleViewWaitlist(ctx, student) {
  */
 async function handleBookDifferentTime(ctx, student) {
   await ctx.reply(
-    `🔍 <b>בחירת זמן אחר</b>\n\nאנא ספר לי את הזמן המועדף עליך. אתה יכול לומר דברים כמו:\n\n• "אני רוצה שיעור ביום רביעי הבא בשעה 5"\n• "איזה זמנים פנויים יש בסוף השבוע?"\n• "תתאם לי משהו השבוע הבא אחר הצהריים"\n\nפשוט כתוב את בקשתך באופן טבעי! 🕐`,
+    `💬 <b>שיחה טבעית עם שפיר</b>\n\nשלום ${student.getDisplayName()}! 😊\n\nאני כאן לעזור לך לתאם שיעור מתמטיקה בצורה הכי נוחה.\n\n🗣️ <b>פשוט כתוב לי מה שאתה רוצה:</b>\n\n💡 <b>דוגמאות:</b>\n• "אני רוצה שיעור ביום רביעי בצהריים"\n• "מתי יש זמנים פנויים השבוע הבא?"\n• "אני פנוי מחר אחרי 3"\n• "תתאם לי משהו השבוע בערב"\n• "איזה זמנים יש ביום שישי?"\n\n📱 <b>כתוב את הבקשה שלך כאן למטה!</b> אני אבין ואעזור לך ↓`,
     { 
       parse_mode: 'HTML',
       reply_markup: Markup.inlineKeyboard([
-        [Markup.button.callback('📅 הצג זמנים זמינים', 'show_available_times')],
-        [Markup.button.callback('⏰ הצטרף לרשימת המתנה', 'waitlist_join')],
-        [Markup.button.callback('« חזור', 'back_to_menu')]
+        [Markup.button.callback('📅 או הצג זמנים זמינים', 'show_available_times')],
+        [Markup.button.callback('⏰ רשימת המתנה', 'join_waitlist')],
+        [Markup.button.callback('🏠 תפריט ראשי', 'back_to_menu')]
       ]).reply_markup
     }
   );
-  ctx.session.step = 'booking_request';
+  ctx.session.step = 'natural_conversation';
 }
 
 // Handle join waitlist - specific time based
@@ -1103,14 +1103,62 @@ async function handleSelectTime(ctx, callbackData, student) {
   try {
     const slotIndex = parseInt(callbackData.replace('select_time_', ''));
     
-    // Get the slot from session
-    if (!ctx.session?.availableSlots || !ctx.session.availableSlots[slotIndex]) {
+    // Get the slot from session with better error handling
+    if (!ctx.session) {
+      ctx.session = {};
+    }
+    
+    if (!ctx.session.availableSlots || !ctx.session.availableSlots[slotIndex]) {
+      logger.warn('Session slot data lost, regenerating...', { 
+        slotIndex, 
+        hasSession: !!ctx.session,
+        hasSlots: !!ctx.session?.availableSlots,
+        slotsLength: ctx.session?.availableSlots?.length || 0
+      });
+      
       await ctx.editMessageText(
-        '❌ מצטער, המידע על הזמן נמחק. אנא בחר זמן שוב.',
+        '⏳ <b>רגע, אני מחזיר את הזמנים הזמינים...</b>\n\nהמידע נמחק, אני טוען שוב את האפשרויות.',
+        { parse_mode: 'HTML' }
+      );
+      
+      // Try to regenerate available slots for today/tomorrow
+      try {
+        const schedulerService = require('../../services/scheduler');
+        const availableSlots = await schedulerService.findNextAvailableSlots(60, 3);
+        
+        if (availableSlots.length > 0) {
+          ctx.session.availableSlots = availableSlots;
+          
+          let message = '📅 <b>זמנים זמינים (מחודש)</b>\n\nכאן הזמנים הזמינים:\n\n';
+          const timeButtons = [];
+          
+          availableSlots.slice(0, 8).forEach((slot, index) => {
+            message += `${index + 1}. ${slot.formattedTime}\n`;
+            timeButtons.push([Markup.button.callback(
+              `🕐 ${slot.formattedTime}`,
+              `select_time_${index}`
+            )]);
+          });
+          
+          timeButtons.push([Markup.button.callback('🏠 תפריט ראשי', 'back_to_menu')]);
+          
+          await ctx.editMessageText(message, {
+            parse_mode: 'HTML',
+            reply_markup: Markup.inlineKeyboard(timeButtons).reply_markup
+          });
+          return;
+        }
+      } catch (regenerateError) {
+        logger.error('Failed to regenerate slots:', regenerateError);
+      }
+      
+      await ctx.editMessageText(
+        '❌ <b>אופס! משהו השתבש</b>\n\nבואו ננסה שוב מההתחלה:',
         {
           parse_mode: 'HTML',
           reply_markup: Markup.inlineKeyboard([
-            [Markup.button.callback('« חזור לבחירת יום', 'show_available_times')],
+            [Markup.button.callback('📅 זמנים זמינים', 'show_available_times')],
+            [Markup.button.callback('🗣️ שיחה עם שפיר', 'book_different_time')],
             [Markup.button.callback('🏠 תפריט ראשי', 'back_to_menu')]
           ]).reply_markup
         }

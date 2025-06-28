@@ -234,6 +234,7 @@ const handleText = async (ctx) => {
 
     switch (conversationState) {
       case 'booking_request':
+      case 'natural_conversation':
         await handleBookingRequest(ctx, message, student);
         break;
       
@@ -309,28 +310,34 @@ const handleText = async (ctx) => {
 
 const handleBookingRequest = async (ctx, message, student) => {
   try {
-    // Use AI to process the booking request
-    logger.aiLog('processing_booking_request', message, null, { studentId: student.id });
+    // Enhanced AI processing with better student context
+    logger.aiLog('processing_enhanced_booking_request', message, null, { studentId: student.id });
     
     const aiResult = await aiScheduler.processSchedulingRequest(message, {
       id: student.id,
       name: student.getDisplayName(),
       timezone: student.timezone || 'Asia/Jerusalem',
       preferredDuration: student.preferred_lesson_duration || 60,
-      recentLessons: [] // We can add this later
+      recentLessons: [] 
     });
 
-    logger.aiLog('ai_result', message, JSON.stringify(aiResult), {
+    logger.aiLog('enhanced_ai_result', message, JSON.stringify(aiResult), {
       intent: aiResult.intent,
       confidence: aiResult.confidence
     });
 
-    // Process based on AI understanding
+    // First, show the AI's natural response for better conversation flow
+    if (aiResult.natural_response && aiResult.confidence > 0.7) {
+      await ctx.reply(aiResult.natural_response, { parse_mode: 'HTML' });
+    }
+
+    // Process the scheduling request
     const result = await schedulerService.processBookingRequest(message, student, { aiResult });
 
     if (result.success) {
       if (result.type === 'slots_available') {
-        await showAvailableSlots(ctx, result.availableSlots, result.schedulingData);
+        // Show available slots with improved messaging
+        await showEnhancedAvailableSlots(ctx, result.availableSlots, aiResult);
       } else if (result.type === 'general_response') {
         await ctx.reply(result.message, { parse_mode: 'HTML' });
       } else if (result.type === 'availability_check') {
@@ -338,9 +345,14 @@ const handleBookingRequest = async (ctx, message, student) => {
       }
     } else {
       if (result.type === 'no_slots_waitlist_offered') {
-        await showWaitlistOptions(ctx, result.alternativeSlots, result.schedulingData);
+        await showWaitlistOptions(ctx, result.alternativeSlots, aiResult);
       } else if (result.needsMoreInfo) {
-        await ctx.reply(result.message, { parse_mode: 'HTML' });
+        // Use AI suggestions if available
+        let responseMessage = result.message;
+        if (aiResult.suggested_responses && aiResult.suggested_responses.length > 0) {
+          responseMessage += '\n\n💡 ' + aiResult.suggested_responses[0];
+        }
+        await ctx.reply(responseMessage, { parse_mode: 'HTML' });
         // Keep in booking state for follow-up
       } else {
         await ctx.reply(result.message, { parse_mode: 'HTML' });
@@ -349,10 +361,59 @@ const handleBookingRequest = async (ctx, message, student) => {
     }
 
   } catch (error) {
-    logger.error('Error handling booking request:', error);
-    await ctx.reply('❌ היה לי קושי לעבד את בקשת התיאום שלך. אתה יכול לנסות לנסח את הבקשה שוב?');
+    logger.error('Error handling enhanced booking request:', error);
+    const studentName = student.getDisplayName();
+    await ctx.reply(
+      `שלום ${studentName}! 😊\n\nיש לי קצת בעיה להבין את הבקשה. אתה יכול לנסח שוב?\n\nדוגמאות:\n• "אני רוצה שיעור ביום רביעי בצהריים"\n• "מתי יש זמנים פנויים השבוע?"\n• "אני פנוי מחר אחרי 3"\n\nבברכה,\nשפיר.`,
+      { parse_mode: 'HTML' }
+    );
     ctx.session.step = null;
   }
+};
+
+const showEnhancedAvailableSlots = async (ctx, slots, aiResult) => {
+  const studentRequest = aiResult.original_message || '';
+  let message = '📅 <b>מצאתי זמנים מתאימים!</b>\n\n';
+  
+  if (aiResult.datetime_preferences && aiResult.datetime_preferences.length > 0) {
+    message += `בהתבסס על הבקשה שלך:\n<i>"${studentRequest}"</i>\n\n`;
+  }
+
+  message += 'הזמנים הזמינים:\n\n';
+
+  const buttons = [];
+  
+  slots.slice(0, 6).forEach((slot, index) => {
+    message += `${index + 1}. ${slot.formattedTime}\n`;
+    message += `   ⏱️ ${slot.duration} דקות • 💰 ${slot.pricePerHour || 180}₪\n\n`;
+    
+    buttons.push([Markup.button.callback(
+      `✅ ${slot.formattedTime}`, 
+      `book_slot_${index}`
+    )]);
+  });
+
+  if (slots.length > 6) {
+    message += `\n<i>... ועוד ${slots.length - 6} זמנים זמינים</i>`;
+    buttons.push([Markup.button.callback('📅 הצג עוד זמנים', 'show_more_slots')]);
+  }
+
+  buttons.push([
+    Markup.button.callback('🗣️ שיחה טבעית עם שפיר', 'book_different_time'),
+    Markup.button.callback('📋 כל הזמנים', 'show_available_times')
+  ]);
+  buttons.push([Markup.button.callback('🏠 תפריט ראשי', 'back_to_menu')]);
+
+  await ctx.reply(message, {
+    parse_mode: 'HTML',
+    reply_markup: Markup.inlineKeyboard(buttons).reply_markup
+  });
+
+  // Store enhanced data in session
+  ctx.session.data = ctx.session.data || {};
+  ctx.session.data.availableSlots = slots;
+  ctx.session.data.aiResult = aiResult;
+  ctx.session.step = 'enhanced_slot_selection';
 };
 
 const handleWaitlistRequest = async (ctx, message, student) => {

@@ -74,30 +74,36 @@ class AIScheduler {
 
   setupPromptTemplate() {
     this.promptTemplate = ChatPromptTemplate.fromMessages([
-      ['system', `אתה מערכת AI לתיאום שיעורי מתמטיקה של המורה שפיר.
+      ['system', `אתה מורה פרטי למתמטיקה בשם שפיר - חכם, חם, ועוזר לתלמידים לתאם שיעורים בצורה טבעית.
 
-התפקיד שלך הוא לנתח בקשות תיאום מתלמידים ולהחזיר תגובה JSON תקנית בעברית בלבד.
+🎯 **התפקיד שלך:**
+- לנהל שיחה טבעית ונעימה עם תלמידים
+- להבין בקשות לתיאום שיעורים בכל צורה שהן יכתבו
+- לעזור להם למצוא זמנים מתאימים
+- להיות מועיל וידידותי
 
-חובה לענות רק בעברית ולא להשתמש באנגלית כלל!
+📅 **פרטי העבודה:**
+- שעות עבודה: 10:00-19:00
+- ימי עבודה: ראשון-חמישי  
+- אורך שיעור: 60 דקות
+- אזור זמן: Asia/Jerusalem
 
-אזור זמן מורה: Asia/Jerusalem
-שעות עבודה: 10:00 - 18:00
-ימי עבודה: ראשון, שני, שלישי, רביעי, חמישי
+🗣️ **איך לנהל שיחה:**
+- תמיד ענה בעברית בלבד!
+- היה חם ואישי
+- הבן גם ביטויים לא פורמליים
+- אם לא הבנת - בקש הבהרה בצורה נחמדה
+- הצע פתרונות ואלטרנטיבות
 
-עליך לנתח את הבקשה ולזהות:
-- כוונה (intent): book_lesson, cancel_lesson, reschedule_lesson, check_availability, join_waitlist, other
-- רמת ביטחון (confidence): 0.0-1.0
-- העדפות תאריך ושעה אם נמצאו
-- פרטי השיעור
-
-חזור תמיד JSON תקני בפורמט הזה בדיוק:
+📝 **פורמט התשובה:**
+חזור JSON בדיוק כך:
 {{
-  "intent": "book_lesson",
+  "intent": "book_lesson/check_availability/cancel_lesson/reschedule_lesson/join_waitlist/other",
   "confidence": 0.8,
   "datetime_preferences": [
     {{
-      "datetime": "2025-06-27T14:00:00",
-      "date": "2025-06-27",
+      "datetime": "2025-01-15T14:00:00",
+      "date": "2025-01-15", 
       "time": "14:00",
       "flexibility": "preferred",
       "duration_minutes": 60
@@ -108,18 +114,23 @@ class AIScheduler {
     "lesson_type": "regular"
   }},
   "urgency": "medium",
-  "reasoning": "התלמיד מבקש לתאם שיעור מחר בשעה 2",
+  "reasoning": "התלמיד רוצה שיעור ביום רביעי בצהריים",
+  "natural_response": "נהדר! אני אבדוק עבורך זמנים זמינים ביום רביעי בצהריים. יש לי כמה אפשרויות טובות!",
   "suggested_responses": [
-    "אבדוק עבורך זמנים זמינים מחר אחר הצהריים",
-    "איזה נושא בספציפי ברצונך להתמקד?"
+    "האם השעה 12:00 מתאימה לך?",
+    "יש לי גם אפשרות ב-13:00 או 14:00"
   ]
 }}
 
-חובה להחזיר JSON תקני בלבד ללא טקסט נוסף!`],
-      ['human', `הודעת התלמיד: {user_message}
-קונטקסט: {context}
+❗ **חשוב:** חזור רק JSON תקני, ללא טקסט נוסף!`],
+      ['human', `💬 הודעת התלמיד: "{user_message}"
 
-נא לנתח ולהחזיר JSON תקני בעברית בלבד:`]
+📋 קצת עליו:
+שם: {student_name}
+זמן מועדף: {preferred_duration} דקות
+אזור זמן: {timezone}
+
+🤖 נתח את הבקשה והחזר JSON עם תגובה טבעית ומועילה:`]
     ]);
   }
 
@@ -132,98 +143,43 @@ class AIScheduler {
   async processSchedulingRequest(userMessage, studentProfile = {}) {
     try {
       if (!this.llm) {
-        logger.warn('OpenAI not available, using fallback parsing');
-        return this.fallbackParsing(userMessage, studentProfile);
+        logger.warn('OpenAI not available, using enhanced fallback parsing');
+        return this.enhancedFallbackParsing(userMessage, studentProfile);
       }
 
-      // Prepare the prompt with student context
+      // Enhanced context for better AI understanding
       const contextPrompt = `
-שם התלמיד: ${studentProfile.name || 'לא ידוע'}
-אזור זמן: ${studentProfile.timezone || settings.teacher.timezone}
-העדפות אורך שיעור: ${studentProfile.preferredDuration || settings.lessons.defaultDuration} דקות
+💬 הודעת התלמיד: "${userMessage}"
 
-הודעת התלמיד: "${userMessage}"
+📋 קצת עליו:
+שם: ${studentProfile.name || 'תלמיד חדש'}
+זמן מועדף: ${studentProfile.preferredDuration || 60} דקות  
+אזור זמן: ${studentProfile.timezone || 'Asia/Jerusalem'}
 
-נא לנתח את הבקשה וליצור תגובה JSON תקנית בעברית בלבד.
+🤖 נתח את הבקשה והחזר JSON עם תגובה טבעית ומועילה:
 `;
 
-      logger.aiLog('processing_request', userMessage, 'undefined', { studentId: studentProfile.id });
+      logger.aiLog('processing_enhanced_request', userMessage, 'undefined', { studentId: studentProfile.id });
 
-      // Use chain to process the request with longer timeout
+      // Process with enhanced timeout and retry
       const response = await Promise.race([
         this.chain.invoke({
           user_message: userMessage,
-          context: contextPrompt
+          student_name: studentProfile.name || 'תלמיד',
+          preferred_duration: studentProfile.preferredDuration || 60,
+          timezone: studentProfile.timezone || 'Asia/Jerusalem'
         }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('AI timeout')), 25000))
+        new Promise((_, reject) => setTimeout(() => reject(new Error('AI timeout')), 20000))
       ]);
 
-      logger.info('Raw AI response type:', typeof response);
-      logger.info('Raw AI response length:', response?.length || 'undefined');
-      
-      // Handle different response types
-      let responseText = '';
-      if (typeof response === 'string') {
-        responseText = response;
-      } else if (response && typeof response.content === 'string') {
-        responseText = response.content;
-      } else if (response && typeof response.text === 'string') {
-        responseText = response.text;
-      } else if (Array.isArray(response)) {
-        // Handle array of characters/chunks
-        responseText = response.join('');
-      } else if (response && typeof response === 'object') {
-        // Try to extract text from object
-        responseText = JSON.stringify(response);
-      } else {
-        logger.warn('Unexpected response type, using fallback');
-        return this.fallbackParsing(userMessage, studentProfile);
-      }
+      // Enhanced response parsing
+      let responseText = this.extractResponseText(response);
+      let parsedResponse = this.parseAIResponse(responseText, userMessage, studentProfile);
 
-      // Parse JSON response with better error handling
-      let parsedResponse;
-      try {
-        // Clean the response more thoroughly
-        const cleanResponse = responseText
-          .replace(/```json\n?|\n?```/g, '')
-          .replace(/```\n?|\n?```/g, '')
-          .replace(/^\s*[\r\n]+|[\r\n]+\s*$/g, '')
-          .trim();
-        
-        logger.info('Cleaned response:', cleanResponse.substring(0, 200) + '...');
-        
-        // Find JSON object within the response
-        const jsonMatch = cleanResponse.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          parsedResponse = JSON.parse(jsonMatch[0]);
-        } else {
-          throw new Error('No JSON object found in response');
-        }
-      } catch (parseError) {
-        logger.error('Failed to parse AI response as JSON:', parseError);
-        logger.error('Clean response:', responseText.substring(0, 500));
-        
-        // Use fallback instead of throwing error
-        logger.info('Using fallback parsing due to JSON error');
-        return this.fallbackParsing(userMessage, studentProfile);
-      }
+      // Validate and enhance response
+      parsedResponse = this.validateAndEnhanceResponse(parsedResponse, userMessage, studentProfile);
 
-      // Validate and enhance the response
-      if (!parsedResponse.intent) {
-        parsedResponse.intent = 'other';
-      }
-      if (!parsedResponse.confidence) {
-        parsedResponse.confidence = 0.5;
-      }
-
-      // Post-process datetime preferences
-      if (parsedResponse.datetime_preferences) {
-        parsedResponse.datetime_preferences = parsedResponse.datetime_preferences.map(pref => 
-          this.enhanceDatetimePreference(pref, userMessage, studentProfile.timezone)
-        );
-      }
-
-      logger.aiLog('request_processed', userMessage.substring(0, 100), JSON.stringify(parsedResponse), {
+      logger.aiLog('enhanced_ai_result', userMessage.substring(0, 100), JSON.stringify(parsedResponse), {
         intent: parsedResponse.intent,
         confidence: parsedResponse.confidence
       });
@@ -231,179 +187,98 @@ class AIScheduler {
       return parsedResponse;
 
     } catch (error) {
-      logger.error('Error processing scheduling request:', error);
-      
-      // Always fallback to basic parsing on any error
-      return this.fallbackParsing(userMessage, studentProfile);
+      logger.error('Error in enhanced AI processing:', error);
+      return this.enhancedFallbackParsing(userMessage, studentProfile);
     }
   }
 
-  enhanceDatetimePreference(preference, originalMessage, studentTimezone) {
+  extractResponseText(response) {
+    if (typeof response === 'string') return response;
+    if (response?.content) return response.content;
+    if (response?.text) return response.text;
+    if (Array.isArray(response)) return response.join('');
+    if (typeof response === 'object') return JSON.stringify(response);
+    return '';
+  }
+
+  parseAIResponse(responseText, userMessage, studentProfile) {
     try {
-      // Use chrono for additional date/time parsing
-      const chronoResults = chrono.parse(originalMessage, new Date(), { 
-        forwardDate: true,
-        timezone: studentTimezone || settings.teacher.timezone
-      });
-
-      if (chronoResults.length > 0) {
-        const chronoResult = chronoResults[0];
-        const parsedDateTime = moment(chronoResult.start.date()).tz(settings.teacher.timezone);
-
-        // Enhance the preference with chrono results if not already specified
-        if (!preference.datetime && !preference.date) {
-          preference.date = parsedDateTime.format('YYYY-MM-DD');
-          preference.time = parsedDateTime.format('HH:mm');
-          preference.datetime = parsedDateTime.toISOString();
-        }
+      // Clean response thoroughly
+      const cleanResponse = responseText
+        .replace(/```json\s*|\s*```/g, '')
+        .replace(/```\s*|\s*```/g, '')
+        .trim();
+      
+      // Find JSON object
+      const jsonMatch = cleanResponse.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
       }
-
-      // Convert relative times to absolute
-      if (preference.datetime) {
-        const momentTime = moment.tz(preference.datetime, settings.teacher.timezone);
-        if (momentTime.isValid()) {
-          preference.datetime = momentTime.toISOString();
-          preference.date = momentTime.format('YYYY-MM-DD');
-          preference.time = momentTime.format('HH:mm');
-        }
-      }
-
-      return preference;
+      throw new Error('No JSON found');
     } catch (error) {
-      logger.error('Error enhancing datetime preference:', error);
-      return preference;
+      logger.warn('Failed to parse AI JSON response, using enhanced fallback');
+      return this.enhancedFallbackParsing(userMessage, studentProfile);
     }
   }
 
-  fallbackParsing(userMessage, studentProfile) {
-    logger.info('Using fallback parsing for message:', userMessage);
+  validateAndEnhanceResponse(response, userMessage, studentProfile) {
+    // Ensure required fields
+    if (!response.intent) response.intent = 'other';
+    if (!response.confidence) response.confidence = 0.5;
+    if (!response.natural_response) {
+      response.natural_response = this.generateNaturalFallbackResponse(response.intent, studentProfile.name);
+    }
 
-    // Enhanced keyword-based intent detection for Hebrew and English
+    // Add original message for context
+    response.original_message = userMessage;
+
+    // Post-process datetime preferences
+    if (response.datetime_preferences) {
+      response.datetime_preferences = response.datetime_preferences.map(pref => 
+        this.enhanceDatetimePreference(pref, userMessage, studentProfile.timezone)
+      );
+    }
+
+    return response;
+  }
+
+  enhancedFallbackParsing(userMessage, studentProfile) {
+    logger.info('Using enhanced fallback parsing for:', userMessage);
+
     const message = userMessage.toLowerCase();
     let intent = 'other';
-    let confidence = 0.3;
+    let confidence = 0.4;
+    let naturalResponse = '';
 
-    // Check cancellation first (more specific patterns)
-    if (message.includes('ביטול') || message.includes('לבטל') || message.includes('מבטל') || 
-        message.includes('בטל') || message.includes('לבטל את השיעור') || message.includes('אני רוצה לבטל') || 
-        message.includes('רוצה לבטל') || message.includes('cancel') || message.includes('remove') || 
-        message.includes('delete')) {
+    // Enhanced Hebrew intent detection
+    if (this.matchesPattern(message, ['ביטול', 'לבטל', 'מבטל', 'בטל', 'לא יכול', 'לא אוכל לגיע'])) {
       intent = 'cancel_lesson';
-      confidence = 0.8;
-    } else if (message.includes('תאם') || message.includes('שיעור') || message.includes('לתאם') || 
-               message.includes('רוצה') || message.includes('צריך') || message.includes('אפשר') ||
-               message.includes('book') || message.includes('schedule') || message.includes('lesson') || 
-               message.includes('want') || message.includes('need')) {
+      confidence = 0.85;
+      naturalResponse = `${studentProfile.name || 'חבר'}, אני אעזור לך לבטל שיעור. איזה שיעור תרצה לבטל?`;
+    } else if (this.matchesPattern(message, ['תאם', 'שיעור', 'לתאם', 'רוצה', 'צריך', 'אפשר', 'בא לי', 'מעוניין'])) {
       intent = 'book_lesson';
-      confidence = 0.7;
-    } else if (message.includes('לשנות') || message.includes('להעביר') || message.includes('לדחות') || 
-               message.includes('reschedule') || message.includes('change') || message.includes('move')) {
+      confidence = 0.8;
+      naturalResponse = `נהדר ${studentProfile.name || ''}! בואו נמצא לך זמן מתאים לשיעור. `;
+    } else if (this.matchesPattern(message, ['זמינים', 'פנוי', 'זמנים', 'מתי', 'איזה זמנים', 'מה יש'])) {
+      intent = 'check_availability';
+      confidence = 0.85;
+      naturalResponse = `בטח! אני בודק עכשיו את הזמנים הפנויים שלי השבוע...`;
+    } else if (this.matchesPattern(message, ['לשנות', 'להעביר', 'לדחות', 'לשנות זמן', 'להחליף'])) {
       intent = 'reschedule_lesson';
       confidence = 0.8;
-    } else if (message.includes('זמינים') || message.includes('פנוי') || message.includes('זמנים') || 
-               message.includes('מתי') || message.includes('available') || message.includes('free') || 
-               message.includes('when')) {
-      intent = 'check_availability';
-      confidence = 0.8;
-    } else if (message.includes('המתנה') || message.includes('רשימה') || message.includes('לחכות') || 
-               message.includes('wait') || message.includes('list') || message.includes('waitlist')) {
-      intent = 'join_waitlist';
-      confidence = 0.7;
+      naturalResponse = `כמובן ${studentProfile.name || ''}! איזה שיעור תרצה להעביר ולאיזה זמן?`;
     }
 
-    // Enhanced date/time parsing
-    const datetime_preferences = [];
-    
-    try {
-      // Basic chrono parsing for English dates
-      const chronoResults = chrono.parse(userMessage);
-      chronoResults.forEach(result => {
-        const startDate = result.start.date();
-        datetime_preferences.push({
-          datetime: moment(startDate).toISOString(),
-          date: moment(startDate).format('YYYY-MM-DD'),
-          time: moment(startDate).format('HH:mm'),
-          flexibility: 'preferred',
-          duration_minutes: studentProfile.preferredDuration || settings.lessons.defaultDuration
-        });
-      });
+    // Enhanced Hebrew datetime parsing
+    const datetime_preferences = this.parseHebrewDateTime(message, studentProfile);
 
-      // Enhanced Hebrew time patterns
-      const hebrewTimePatterns = [
-        { pattern: /מחר|tomorrow/, offset: 1, time: '15:00' },
-        { pattern: /היום|today/, offset: 0, time: '16:00' },
-        { pattern: /מחרתיים|day after tomorrow/, offset: 2, time: '15:00' },
-        { pattern: /השבוע הבא|next week/, offset: 7, time: '15:00' },
-        { pattern: /השבוע|this week/, offset: 3, time: '15:00' },
-        { pattern: /(יום )?ראשון|sunday/, dayOfWeek: 0 },
-        { pattern: /(יום )?שני|monday/, dayOfWeek: 1 },
-        { pattern: /(יום )?שלישי|tuesday/, dayOfWeek: 2 },
-        { pattern: /(יום )?רביעי|wednesday/, dayOfWeek: 3 },
-        { pattern: /(יום )?חמישי|thursday/, dayOfWeek: 4 },
-        { pattern: /(יום )?שישי|friday/, dayOfWeek: 5 }
-      ];
-      
-      // Hebrew time expressions
-      const timePatterns = [
-        { pattern: /בבוקר|morning/, hour: 10 },
-        { pattern: /אחר הצהריים|afternoon/, hour: 15 },
-        { pattern: /בערב|evening/, hour: 18 },
-        { pattern: /בלילה|night/, hour: 20 },
-        { pattern: /שעה (\d+)/, match: 1 },
-        { pattern: /(\d+) בבוקר/, match: 1, modifier: 'morning' },
-        { pattern: /(\d+) אחר הצהריים/, match: 1, modifier: 'afternoon' }
-      ];
-      
-      for (const timePattern of hebrewTimePatterns) {
-        const match = timePattern.pattern.exec(message);
-        if (match) {
-          const baseDate = moment().tz(studentProfile.timezone || 'Asia/Jerusalem');
-          let targetDate;
-          
-          if (timePattern.offset !== undefined) {
-            targetDate = baseDate.clone().add(timePattern.offset, 'days');
-          } else if (timePattern.dayOfWeek !== undefined) {
-            targetDate = baseDate.clone().day(timePattern.dayOfWeek);
-            if (targetDate.isBefore(baseDate) || targetDate.isSame(baseDate, 'day')) {
-              targetDate.add(1, 'week');
-            }
-          }
-          
-          if (targetDate) {
-            let hour = 15; // Default hour
-            
-            // Look for time patterns in the same message
-            for (const timePat of timePatterns) {
-              const timeMatch = timePat.pattern.exec(message);
-              if (timeMatch) {
-                if (timePat.match) {
-                  hour = parseInt(timeMatch[timePat.match]);
-                  if (timePat.modifier === 'afternoon' && hour <= 12) {
-                    hour += 12;
-                  }
-                } else if (timePat.hour) {
-                  hour = timePat.hour;
-                }
-                break;
-              }
-            }
-            
-            targetDate.hour(hour).minute(0).second(0);
-            
-            datetime_preferences.push({
-              datetime: targetDate.toISOString(),
-              date: targetDate.format('YYYY-MM-DD'),
-              time: targetDate.format('HH:mm'),
-              flexibility: 'preferred',
-              duration_minutes: studentProfile.preferredDuration || settings.lessons.defaultDuration
-            });
-            confidence = Math.min(confidence + 0.3, 0.95);
-            break;
-          }
-        }
+    // If found time preferences, boost confidence and enhance response
+    if (datetime_preferences.length > 0) {
+      confidence = Math.min(confidence + 0.2, 0.95);
+      if (intent === 'book_lesson') {
+        const timeDesc = this.describeTimePreferences(datetime_preferences);
+        naturalResponse += `אני מחפש עבורך זמנים ${timeDesc}...`;
       }
-    } catch (error) {
-      logger.warn('Error in enhanced fallback time parsing:', error);
     }
 
     return {
@@ -415,13 +290,173 @@ class AIScheduler {
         lesson_type: 'regular'
       },
       urgency: 'medium',
-      reasoning: `זיהוי משופר: ${intent} ברמת ביטחון ${confidence}`,
-      suggested_responses: [
-        'אני כאן לעזור! איזה תאריך ושעה הכי נוחים לך?',
-        'בואו נמצא יחד את הזמן המושלם לשיעור',
-        'תוכל להגיד לי "מחר אחרי 3" או "ביום ראשון בערב"'
-      ]
+      reasoning: `זיהוי משופר: ${intent} (${confidence}) עם ${datetime_preferences.length} העדפות זמן`,
+      natural_response: naturalResponse,
+      suggested_responses: this.generateContextualSuggestions(intent, datetime_preferences),
+      original_message: userMessage
     };
+  }
+
+  matchesPattern(text, patterns) {
+    return patterns.some(pattern => text.includes(pattern));
+  }
+
+  parseHebrewDateTime(message, studentProfile) {
+    const datetime_preferences = [];
+    const baseDate = moment().tz(studentProfile.timezone || 'Asia/Jerusalem');
+
+    // Enhanced Hebrew patterns for days - much more comprehensive
+    const dayPatterns = [
+      { pattern: /(היום|עכשיו)/, offset: 0 },
+      { pattern: /(מחר)/, offset: 1 },
+      { pattern: /(מחרתיים|יומיים)/, offset: 2 },
+      { pattern: /(ראשון|יום ראשון|ביום ראשון|בראשון)/, dayOfWeek: 0 },
+      { pattern: /(שני|יום שני|ביום שני|בשני)/, dayOfWeek: 1 },
+      { pattern: /(שלישי|יום שלישי|ביום שלישי|בשלישי)/, dayOfWeek: 2 },
+      { pattern: /(רביעי|יום רביעי|ביום רביעי|ברביעי|wednesday)/, dayOfWeek: 3 },
+      { pattern: /(חמישי|יום חמישי|ביום חמישי|בחמישי)/, dayOfWeek: 4 },
+      { pattern: /(שישי|יום שישי|ביום שישי|בשישי)/, dayOfWeek: 5 },
+      { pattern: /(שבת|ביום שבת|בשבת)/, dayOfWeek: 6 },
+      { pattern: /(השבוע הבא|שבוע הבא)/, offset: 7 },
+      { pattern: /(השבוע|השבוע הזה)/, offset: 2 }
+    ];
+
+    // Enhanced time patterns including all variations of noon and times
+    const timePatterns = [
+      { pattern: /(בצהריים|צהריים|בצהרים|צהרים|noon|בצהריים|צהריים|12|בשתיים עשרה)/, hour: 12 },
+      { pattern: /(בבוקר|בוקר|morning)/, hour: 10 },
+      { pattern: /(אחר הצהריים|אחרי הצהריים|אחה"צ|afternoon)/, hour: 15 },
+      { pattern: /(בערב|ערב|evening)/, hour: 18 },
+      { pattern: /(בלילה|לילה|night)/, hour: 20 },
+      { pattern: /שעה (\d+)/, match: 1 },
+      { pattern: /ב(\d+)/, match: 1 },
+      { pattern: /(\d+) בבוקר/, match: 1, modifier: 'morning' },
+      { pattern: /(\d+) אחר הצהריים/, match: 1, modifier: 'afternoon' },
+      { pattern: /(\d+) בערב/, match: 1, modifier: 'evening' },
+      { pattern: /(\d+):(\d+)/, timeFormat: true }, // HH:MM format
+      { pattern: /אחרי (\d+)/, match: 1, modifier: 'after' }, // אחרי 3 = after 3
+      { pattern: /לפני (\d+)/, match: 1, modifier: 'before' } // לפני 4 = before 4
+    ];
+
+    // Find day matches
+    for (const dayPattern of dayPatterns) {
+      const match = dayPattern.pattern.exec(message);
+      if (match) {
+        let targetDate;
+        
+        if (dayPattern.offset !== undefined) {
+          targetDate = baseDate.clone().add(dayPattern.offset, 'days');
+        } else if (dayPattern.dayOfWeek !== undefined) {
+          targetDate = baseDate.clone().day(dayPattern.dayOfWeek);
+          // If it's today or in the past, move to next week
+          if (targetDate.isSameOrBefore(baseDate, 'day')) {
+            targetDate.add(1, 'week');
+          }
+        }
+        
+        if (targetDate) {
+          let hour = 14; // Default afternoon time
+          
+          // Look for time in the same message
+          for (const timePattern of timePatterns) {
+            const timeMatch = timePattern.pattern.exec(message);
+            if (timeMatch) {
+              if (timePattern.hour) {
+                hour = timePattern.hour;
+              } else if (timePattern.match) {
+                hour = parseInt(timeMatch[timePattern.match]);
+                if (timePattern.modifier === 'afternoon' && hour <= 12) {
+                  hour += 12;
+                } else if (timePattern.modifier === 'evening' && hour <= 8) {
+                  hour += 12;
+                }
+              } else if (timePattern.timeFormat) {
+                hour = parseInt(timeMatch[1]);
+                const minute = parseInt(timeMatch[2]) || 0;
+                targetDate.minute(minute);
+              }
+              break;
+            }
+          }
+          
+          targetDate.hour(hour).minute(0).second(0);
+          
+          datetime_preferences.push({
+            datetime: targetDate.toISOString(),
+            date: targetDate.format('YYYY-MM-DD'),
+            time: targetDate.format('HH:mm'),
+            flexibility: 'preferred',
+            duration_minutes: studentProfile.preferredDuration || 60
+          });
+          
+          break; // Found a day, stop looking
+        }
+      }
+    }
+
+    return datetime_preferences;
+  }
+
+  describeTimePreferences(preferences) {
+    if (preferences.length === 0) return '';
+    
+    const pref = preferences[0];
+    const momentTime = moment(pref.datetime);
+    const dayName = this.getHebrewDayName(momentTime.day());
+    const timeDesc = momentTime.format('HH:mm');
+    
+    return `ב${dayName} בשעה ${timeDesc}`;
+  }
+
+  getHebrewDayName(dayNumber) {
+    const days = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
+    return days[dayNumber] || 'יום';
+  }
+
+  generateContextualSuggestions(intent, datetime_preferences) {
+    const hasTime = datetime_preferences.length > 0;
+    
+    switch (intent) {
+      case 'book_lesson':
+        if (hasTime) {
+          return [
+            'אני בודק זמינות ומחזיר אליך תיכף',
+            'יש לי גם זמנים קרובים אם הזמן שביקשת תפוס'
+          ];
+        } else {
+          return [
+            'איזה יום השבוע הכי נוח לך?',
+            'אתה מעדיף בוקר, צהריים או אחר הצהריים?'
+          ];
+        }
+      case 'check_availability':
+        return [
+          'השבוע יש לי זמנים טובים',
+          'איזה ימים הכי נוחים לך?'
+        ];
+      default:
+        return [
+          'איך אני יכול לעזור לך?',
+          'בוא נמצא יחד פתרון מתאים'
+        ];
+    }
+  }
+
+  generateNaturalFallbackResponse(intent, studentName = '') {
+    const name = studentName || 'חבר';
+    
+    switch (intent) {
+      case 'book_lesson':
+        return `היי ${name}! בואו נתאם לך שיעור מתמטיקה. איזה זמן הכי נוח לך?`;
+      case 'check_availability':
+        return `בטח ${name}! אני בודק עכשיו מה פנוי השבוע...`;
+      case 'cancel_lesson':
+        return `הבנתי ${name}, אתה רוצה לבטל שיעור. איזה שיעור?`;
+      case 'reschedule_lesson':
+        return `כמובן ${name}! איזה שיעור תרצה להעביר ולאיזה זמן?`;
+      default:
+        return `שלום ${name}! אני כאן לעזור לך עם שיעורי מתמטיקה. מה תרצה לעשות?`;
+    }
   }
 
   async generateResponse(schedulingData, availableSlots = [], studentName = '') {
