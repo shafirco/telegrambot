@@ -1,4 +1,5 @@
 const sequelize = require('../config/database');
+const logger = require('../utils/logger');
 const Student = require('./Student');
 const Lesson = require('./Lesson');
 const Waitlist = require('./Waitlist');
@@ -57,9 +58,9 @@ initializeAssociations();
 const syncDatabase = async (force = false) => {
   try {
     await sequelize.sync({ force });
-    console.log('Database synchronized successfully');
+    logger.info('Database synchronized successfully');
   } catch (error) {
-    console.error('Error synchronizing database:', error);
+    logger.error('Error synchronizing database:', error);
     throw error;
   }
 };

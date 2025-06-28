@@ -57,7 +57,7 @@ bot.catch((error, ctx) => {
   // Send error message to user
   ctx.reply('❌ Sorry, something went wrong. Please try again later.', {
     parse_mode: 'HTML'
-  }).catch(console.error);
+  }).catch(err => logger.error('Reply error:', err));
 });
 
 // Enhanced student middleware with better error handling

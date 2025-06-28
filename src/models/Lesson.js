@@ -1,5 +1,6 @@
 const { DataTypes } = require('sequelize');
 const sequelize = require('../config/database');
+const logger = require('../utils/logger');
 
 const Lesson = sequelize.define('Lesson', {
   id: {
@@ -380,7 +381,7 @@ Lesson.hasConflict = async function(startTime, endTime) {
 
     return !!conflictingLesson;
   } catch (error) {
-    console.error('Error checking lesson conflict:', error);
+    logger.error('Error checking lesson conflict:', error);
     return true; // Assume conflict if error occurs
   }
 };
@@ -400,10 +401,10 @@ Lesson.findActiveByStudent = async function(studentId) {
       },
       order: [['start_time', 'ASC']]
     });
-  } catch (error) {
-    console.error('Error finding active lessons:', error);
-    return [];
-  }
+      } catch (error) {
+      logger.error('Error finding active lessons:', error);
+      return [];
+    }
 };
 
 // Class methods

@@ -68,7 +68,7 @@ class AIScheduler {
       this.outputParser = null;
       this.chain = null;
       this.initialized = false;
-      console.warn('OpenAI API key not configured. AI features will be disabled.');
+      logger.warn('OpenAI API key not configured. AI features will be disabled.');
     }
   }
 
