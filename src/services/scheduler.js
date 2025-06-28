@@ -625,7 +625,7 @@ class SchedulerService {
         this.aiScheduler = new AIScheduler();
       }
 
-      const aiResponse = await this.aiScheduler.generateResponse(schedulingData, [], student.getDisplayName());
+      const aiResponse = this.aiScheduler.fallbackResponseGeneration(schedulingData, [], student.getDisplayName());
       
       if (aiResponse && !aiResponse.includes('מצטער, הייתה בעיה')) {
         return {
@@ -705,7 +705,7 @@ class SchedulerService {
       return {
         success: true,
         message: `שלום ${student.getDisplayName()}! 😊\n\nאני כאן לעזור לך עם שיעורי מתמטיקה.\nאתה יכול לשאול אותי כל שאלה או לבקש לתאם שיעור.\n\nבברכה,\nשפיר.`,
-        type: 'general_help'
+        type: 'error_recovery'
       };
     }
   }
@@ -719,7 +719,7 @@ class SchedulerService {
       7 // Next week
     );
 
-    const response = await aiScheduler.generateResponse(
+    const response = aiScheduler.fallbackResponseGeneration(
       schedulingData,
       slots.slice(0, 5),
       student.getDisplayName()

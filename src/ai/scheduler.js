@@ -155,48 +155,48 @@ class AIScheduler {
         return this.enhancedFallbackParsing(userMessage, studentProfile);
       }
 
-      // Enhanced context for better AI understanding
-      const contextPrompt = `
-💬 הודעת התלמיד: "${userMessage}"
-
-📋 קצת עליו:
-שם: ${studentProfile.name || 'תלמיד חדש'}
-זמן מועדף: ${studentProfile.preferredDuration || 60} דקות  
-אזור זמן: ${studentProfile.timezone || 'Asia/Jerusalem'}
-
-🤖 נתח את הבקשה והחזר JSON עם תגובה טבעית ומועילה:
-`;
-
       logger.aiLog('processing_enhanced_request', userMessage, 'undefined', { studentId: studentProfile.id });
 
-      // Process with enhanced timeout and retry
-      const response = await Promise.race([
-        this.chain.invoke({
-          user_message: userMessage,
-          student_name: studentProfile.name || 'תלמיד',
-          preferred_duration: studentProfile.preferredDuration || 60,
-          timezone: studentProfile.timezone || 'Asia/Jerusalem'
-        }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('AI timeout')), 20000))
-      ]);
+      // Use simplified, quota-friendly approach
+      const quickResponse = await this.quickAiRequest(userMessage, studentProfile);
+      
+      if (quickResponse && quickResponse.intent) {
+        logger.aiLog('enhanced_ai_result', userMessage.substring(0, 100), JSON.stringify(quickResponse), {
+          intent: quickResponse.intent,
+          confidence: quickResponse.confidence
+        });
+        return quickResponse;
+      }
 
-      // Enhanced response parsing
-      let responseText = this.extractResponseText(response);
-      let parsedResponse = this.parseAIResponse(responseText, userMessage, studentProfile);
-
-      // Validate and enhance response
-      parsedResponse = this.validateAndEnhanceResponse(parsedResponse, userMessage, studentProfile);
-
-      logger.aiLog('enhanced_ai_result', userMessage.substring(0, 100), JSON.stringify(parsedResponse), {
-        intent: parsedResponse.intent,
-        confidence: parsedResponse.confidence
-      });
-
-      return parsedResponse;
+      // If quick AI fails, use enhanced fallback
+      return this.enhancedFallbackParsing(userMessage, studentProfile);
 
     } catch (error) {
       logger.error('Error in enhanced AI processing:', error);
       return this.enhancedFallbackParsing(userMessage, studentProfile);
+    }
+  }
+
+  /**
+   * Quick, quota-efficient AI request with timeout
+   */
+  async quickAiRequest(userMessage, studentProfile) {
+    try {
+      const prompt = this.createEnhancedPrompt(userMessage, studentProfile);
+      
+      const response = await Promise.race([
+        this.llm.invoke([['human', prompt]]),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('AI timeout')), 8000))
+      ]);
+
+      const responseText = this.extractResponseText(response);
+      const parsedResponse = this.parseAIResponse(responseText, userMessage, studentProfile);
+      
+      return this.validateAndEnhanceResponse(parsedResponse, userMessage, studentProfile);
+
+    } catch (error) {
+      logger.warn('Quick AI request failed:', error.message);
+      return null;
     }
   }
 
@@ -257,36 +257,110 @@ class AIScheduler {
     let intent = 'other';
     let confidence = 0.4;
     let naturalResponse = '';
+    const studentName = studentProfile.name || 'חבר';
 
-    // Enhanced Hebrew intent detection
-    if (this.matchesPattern(message, ['ביטול', 'לבטל', 'מבטל', 'בטל', 'לא יכול', 'לא אוכל לגיע'])) {
-      intent = 'cancel_lesson';
-      confidence = 0.85;
-      naturalResponse = `${studentProfile.name || 'חבר'}, אני אעזור לך לבטל שיעור. איזה שיעור תרצה לבטל?`;
-    } else if (this.matchesPattern(message, ['תאם', 'שיעור', 'לתאם', 'רוצה', 'צריך', 'אפשר', 'בא לי', 'מעוניין'])) {
-      intent = 'book_lesson';
-      confidence = 0.8;
-      naturalResponse = `נהדר ${studentProfile.name || ''}! בואו נמצא לך זמן מתאים לשיעור. `;
-    } else if (this.matchesPattern(message, ['זמינים', 'פנוי', 'זמנים', 'מתי', 'איזה זמנים', 'מה יש'])) {
-      intent = 'check_availability';
-      confidence = 0.85;
-      naturalResponse = `בטח! אני בודק עכשיו את הזמנים הפנויים שלי השבוע...`;
-    } else if (this.matchesPattern(message, ['לשנות', 'להעביר', 'לדחות', 'לשנות זמן', 'להחליף'])) {
-      intent = 'reschedule_lesson';
-      confidence = 0.8;
-      naturalResponse = `כמובן ${studentProfile.name || ''}! איזה שיעור תרצה להעביר ולאיזה זמן?`;
+    // Enhanced Hebrew intent detection with comprehensive patterns
+    const intentPatterns = {
+      book_lesson: [
+        'תאם', 'שיעור', 'לתאם', 'רוצה', 'צריך', 'אפשר', 'בא לי', 'מעוניין', 
+        'לקבוע', 'מתי פנוי', 'זמין', 'זמנים', 'השבוע', 'מחר', 'היום',
+        'יום', 'שעה', 'בצהריים', 'בערב', 'בבוקר', 'אחר הצהריים'
+      ],
+      check_availability: [
+        'זמינים', 'פנוי', 'זמנים', 'מתי', 'איזה זמנים', 'מה יש', 'אפשרויות',
+        'זמינות', 'מה פנוי', 'כשפנוי', 'מתי אפשר'
+      ],
+      cancel_lesson: [
+        'לבטל', 'ביטול', 'מבטל', 'בטל', 'לא יכול', 'לא אוכל לגיע',
+        'לא יגיע', 'משהו קרה', 'בעיה'
+      ],
+      reschedule_lesson: [
+        'לשנות', 'להעביר', 'לדחות', 'זמן אחר', 'החלפה', 'להחליף',
+        'לעבור', 'שינוי'
+      ]
+    };
+
+    // Calculate intent scores with priority for cancel/reschedule
+    let maxMatches = 0;
+    let bestIntent = 'other';
+    
+    // First check for cancel/reschedule - these have priority
+    const priorityIntents = ['cancel_lesson', 'reschedule_lesson'];
+    for (const intentType of priorityIntents) {
+      const patterns = intentPatterns[intentType];
+      const matches = patterns.filter(pattern => message.includes(pattern)).length;
+      if (matches > 0) {
+        intent = intentType;
+        confidence = Math.min(0.95, 0.8 + (matches * 0.1));
+        bestIntent = intentType;
+        maxMatches = matches;
+        break; // Found high-priority intent, stop searching
+      }
+    }
+    
+    // If no priority intent found, check others
+    if (bestIntent === 'other') {
+      for (const [intentType, patterns] of Object.entries(intentPatterns)) {
+        if (priorityIntents.includes(intentType)) continue; // Already checked
+        
+        const matches = patterns.filter(pattern => message.includes(pattern)).length;
+        if (matches > maxMatches) {
+          maxMatches = matches;
+          intent = intentType;
+          confidence = Math.min(0.95, 0.6 + (matches * 0.1));
+        }
+      }
     }
 
     // Enhanced Hebrew datetime parsing
     const datetime_preferences = this.parseHebrewDateTime(message, studentProfile);
 
-    // If found time preferences, boost confidence and enhance response
+    // If found time preferences, boost confidence
     if (datetime_preferences.length > 0) {
       confidence = Math.min(confidence + 0.2, 0.95);
-      if (intent === 'book_lesson') {
-        const timeDesc = this.describeTimePreferences(datetime_preferences);
-        naturalResponse += `אני מחפש עבורך זמנים ${timeDesc}...`;
+      if (intent === 'other') {
+        intent = 'book_lesson';
+        confidence = 0.8;
       }
+    }
+
+    // Generate natural Hebrew responses based on intent
+    switch (intent) {
+      case 'book_lesson':
+        if (datetime_preferences.length > 0) {
+          const timeDesc = this.describeTimePreferences(datetime_preferences);
+          naturalResponse = `נהדר ${studentName}! אני מחפש עבורך זמנים ${timeDesc}. רגע אחד...`;
+        } else {
+          naturalResponse = `שלום ${studentName}! אשמח לתאם לך שיעור מתמטיקה. איזה זמן נוח לך?`;
+        }
+        break;
+        
+      case 'check_availability':
+        naturalResponse = `בטח ${studentName}! אני בודק עכשיו מה פנוי השבוע הזה ואחזור אליך מיד.`;
+        break;
+        
+      case 'cancel_lesson':
+        naturalResponse = `הבנתי ${studentName}. איזה שיעור תרצה לבטל? אני אעזור לך עם זה.`;
+        break;
+        
+      case 'reschedule_lesson':
+        naturalResponse = `כמובן ${studentName}! איזה שיעור תרצה לשנות ולאיזה זמן?`;
+        break;
+        
+      default:
+        // Default helpful response in Hebrew
+        naturalResponse = `שלום ${studentName}! 😊
+
+אני כאן לעזור לך עם שיעורי מתמטיקה. מה תרצה לעשות?
+
+💡 אתה יכול לומר דברים כמו:
+• "אני רוצה שיעור מחר בשעה 5"
+• "מתי יש זמנים פנויים?"
+• "אני רוצה לבטל שיעור"
+• "בואו נתאם משהו השבוע"
+
+פשוט ספר לי מה אתה צריך!`;
+        break;
     }
 
     return {
@@ -298,9 +372,9 @@ class AIScheduler {
         lesson_type: 'regular'
       },
       urgency: 'medium',
-      reasoning: `זיהוי משופר: ${intent} (${confidence}) עם ${datetime_preferences.length} העדפות זמן`,
+      reasoning: `זיהוי עברית משופר: ${intent} (${confidence.toFixed(2)}) עם ${datetime_preferences.length} העדפות זמן`,
       natural_response: naturalResponse,
-      suggested_responses: this.generateContextualSuggestions(intent, datetime_preferences),
+      suggested_responses: this.generateHebrewSuggestions(intent, datetime_preferences),
       original_message: userMessage
     };
   }
@@ -464,31 +538,44 @@ class AIScheduler {
     return days[dayNumber] || 'יום';
   }
 
-  generateContextualSuggestions(intent, datetime_preferences) {
+  generateHebrewSuggestions(intent, datetime_preferences) {
     const hasTime = datetime_preferences.length > 0;
     
     switch (intent) {
       case 'book_lesson':
         if (hasTime) {
           return [
-            'אני בודק זמינות ומחזיר אליך תיכף',
-            'יש לי גם זמנים קרובים אם הזמן שביקשת תפוס'
+            'אני בודק זמינות ומחזיר אליך מיד',
+            'יש לי גם זמנים קרובים אם הזמן הזה תפוס'
           ];
         } else {
           return [
             'איזה יום השבוע הכי נוח לך?',
-            'אתה מעדיף בוקר, צהריים או אחר הצהריים?'
+            'אתה מעדיף בוקר, צהריים או אחר הצהריים?',
+            'תגיד לי "מחר ב5" או "יום רביעי בצהריים"'
           ];
         }
       case 'check_availability':
         return [
           'השבוע יש לי זמנים טובים',
-          'איזה ימים הכי נוחים לך?'
+          'איזה ימים הכי נוחים לך?',
+          'אני יכול להציע כמה אפשרויות'
+        ];
+      case 'cancel_lesson':
+        return [
+          'איזה שיעור תרצה לבטל?',
+          'אני אעזור לך עם הביטול'
+        ];
+      case 'reschedule_lesson':
+        return [
+          'איזה שיעור תרצה לשנות?',
+          'לאיזה זמן תרצה להעביר?'
         ];
       default:
         return [
           'איך אני יכול לעזור לך?',
-          'בוא נמצא יחד פתרון מתאים'
+          'בוא נמצא יחד פתרון מתאים',
+          'ספר לי מה אתה צריך'
         ];
     }
   }
@@ -510,79 +597,82 @@ class AIScheduler {
     }
   }
 
-  async generateResponse(schedulingData, availableSlots = [], studentName = '') {
-    try {
-      if (!this.llm) {
-        logger.warn('OpenAI not available, using fallback response generation');
-        return this.fallbackResponseGeneration(schedulingData, availableSlots, studentName);
-      }
-
-      const prompt = `
-אתה מורה למתמטיקה בשם שפיר, חם ומועיל. ענה בעברית בלבד תמיד!
-
-נתונים על הבקשה:
-- כוונה: ${schedulingData.intent}
-- נימוק: ${schedulingData.reasoning || 'לא צוין'}
-- זמנים זמינים: ${availableSlots.length > 0 ? 'יש זמנים זמינים' : 'אין זמנים זמינים'}
-- שם התלמיד: ${studentName}
-
-הקפד על:
-1. ענה רק בעברית
-2. היה חם ומועיל
-3. תמיד חתום עם "בברכה, שפיר."
-4. אל תציע רשימת המתנה אלא אם צריך
-5. תן מידע מועיל ופרקטי
-
-הודעה מקורית: "${schedulingData.original_message || ''}"
-
-ענה באופן ישיר ומועיל:`;
-
-      const response = await Promise.race([
-        this.llm.invoke([['human', prompt]]),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Response timeout')), 8000))
-      ]);
-
-      const content = response.content;
-      
-      // Ensure proper Hebrew signature
-      if (!content.includes('בברכה, שפיר')) {
-        return content + '\n\nבברכה,\nשפיר.';
-      }
-      
-      return content;
-
-    } catch (error) {
-      logger.error('Error generating AI response:', error);
-      return this.fallbackResponseGeneration(schedulingData, availableSlots, studentName);
-    }
-  }
-
   /**
-   * Generate fallback responses when AI is not available
+   * Generate fallback responses when AI is not available - PURE HEBREW
    */
   fallbackResponseGeneration(schedulingData, availableSlots = [], studentName = '') {
     const intent = schedulingData.intent || 'other';
     const name = studentName || 'חבר';
 
+    // Use the natural response from fallback parsing if available
+    if (schedulingData.natural_response) {
+      return schedulingData.natural_response;
+    }
+
     switch (intent) {
       case 'book_lesson':
         if (availableSlots.length > 0) {
-          return `שלום ${name}! 📚\n\nמצאתי זמנים זמינים עבורך. תוכל לבחור מהאפשרויות שמוצגות או לומר לי איזה זמן הכי מתאים לך.\n\nבברכה,\nשפיר.`;
+          return `${name}, מצאתי זמנים זמינים עבורך! 📚
+
+תוכל לבחור מהאפשרויות שמוצגות למטה, או לומר לי זמן אחר שמעניין אותך.
+
+בברכה,
+שפיר.`;
         } else {
-          return `שלום ${name}! 📚\n\nהזמן שביקשת תפוס כרגע. תוכל לומר לי זמן אחר שמתאים לך, ואני אבדוק האם הוא פנוי.\n\nבברכה,\nשפיר.`;
+          return `${name}, אני מחפש עבורך זמנים מתאימים... 📅
+
+הזמן שביקשת לא זמין כרגע, אבל יש לי עוד הרבה אפשרויות טובות.
+
+אתה יכול:
+• לבחור זמן אחר מהרשימה
+• לומר לי זמן שמתאים לך
+• להצטרף לרשימת המתנה
+
+בברכה,
+שפיר.`;
         }
         
       case 'check_availability':
-        return `שלום ${name}! 📅\n\nאני בודק עבורך זמנים זמינים. רגע אחד...\n\nבברכה,\nשפיר.`;
+        return `${name}, אני בודק עבורך זמנים זמינים השבוע! 📅
+
+רגע אחד, אני מכין לך את כל האפשרויות...
+
+בברכה,
+שפיר.`;
         
       case 'cancel_lesson':
-        return `שלום ${name}! ❌\n\nאוכל לעזור לך לבטל שיעור. אנא פרט איזה שיעור תרצה לבטל.\n\nבברכה,\nשפיר.`;
+        return `${name}, אוכל לעזור לך לבטל שיעור. ❌
+
+תוכל לבחור את השיעור שתרצה לבטל מהרשימה למטה.
+
+⚠️ שים לב: ביטול פחות מ-24 שעות לפני השיעור יחויב בתשלום 50%.
+
+בברכה,
+שפיר.`;
         
       case 'reschedule_lesson':
-        return `שלום ${name}! 🔄\n\nבוודאי אוכל לעזור לך להעביר שיעור. ספר לי איזה שיעור ולאיזה זמן תרצה להעביר.\n\nבברכה,\nשפיר.`;
+        return `${name}, בוודאי אוכל לעזור לך לשנות זמן שיעור! 🔄
+
+תוכל לבחור את השיעור שתרצה לשנות, ואני אראה לך זמנים זמינים חדשים.
+
+בברכה,
+שפיר.`;
         
       default:
-        return `שלום ${name}! 😊\n\nאני כאן לעזור לך עם שיעורי מתמטיקה. תוכל לבקש לתאם שיעור, לבדוק זמנים זמינים, או לשאול כל שאלה.\n\nפשוט כתוב מה שאתה צריך!\n\nבברכה,\nשפיר.`;
+        return `שלום ${name}! 😊
+
+אני שפיר, המורה למתמטיקה שלך. אני כאן לעזור לך עם תיאום שיעורים.
+
+💡 מה אני יכול לעשות עבורך:
+• לתאם שיעור חדש
+• לבדוק זמנים זמינים  
+• לבטל או לשנות שיעור קיים
+• לענות על שאלות כלליות
+
+פשוט כתוב לי מה אתה צריך, או בחר מהתפריט למטה!
+
+בברכה,
+שפיר.`;
     }
   }
 
@@ -621,6 +711,27 @@ Extract lesson preferences as JSON.`]
         difficulty: 'intermediate'
       };
     }
+  }
+
+  /**
+   * Simplified AI prompts that work better with quota limits
+   */
+  createEnhancedPrompt(userMessage, studentProfile) {
+    return `אתה שפיר - מורה מתמטיקה ידידותי בעברית.
+
+תלמיד: ${studentProfile.name || 'תלמיד'}
+הודעה: "${userMessage}"
+
+השב בעברית בלבד! אסור באנגלית!
+
+חזור JSON:
+{
+  "intent": "book_lesson|check_availability|cancel_lesson|reschedule_lesson|other",
+  "confidence": 0.8,
+  "natural_response": "תגובה טבעית בעברית כאן",
+  "datetime_preferences": [],
+  "reasoning": "הסבר קצר בעברית"
+}`;
   }
 }
 

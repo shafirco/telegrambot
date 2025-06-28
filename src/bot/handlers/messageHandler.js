@@ -568,7 +568,18 @@ const handleGeneralMessage = async (ctx, message, student) => {
     // Check for greeting or basic questions
     if (lowerMessage.includes('שלום') || lowerMessage.includes('היי') || lowerMessage.includes('מה שלומך')) {
       await ctx.reply(
-        `היי ${student.getDisplayName()}! 👋\n\nאשמח לעזור לך עם תיאום שיעורי מתמטיקה!\n\n💡 <b>מה אני יכול לעשות עבורך:</b>\n• 📚 לתאם שיעור חדש\n• 📅 לבדוק את השיעורים שלך\n• 🔄 לשנות או לבטל שיעור\n• ⏰ להוסיף אותך לרשימת המתנה\n• ⚙️ לעדכן את הפרטים שלך`,
+        `היי ${student.getDisplayName()}! 👋
+
+אשמח לעזור לך עם תיאום שיעורי מתמטיקה!
+
+💡 <b>מה אני יכול לעשות עבורך:</b>
+• 📚 לתאם שיעור חדש
+• 📅 לבדוק את השיעורים שלך  
+• 🔄 לשנות או לבטל שיעור
+• ⏰ להוסיף אותך לרשימת המתנה
+• ⚙️ לעדכן את הפרטים שלך
+
+פשוט ספר לי מה אתה צריך!`,
         {
           parse_mode: 'HTML',
           reply_markup: Markup.inlineKeyboard([
@@ -581,13 +592,13 @@ const handleGeneralMessage = async (ctx, message, student) => {
       return;
     }
 
-    // Enhanced intent detection with keywords
+    // Enhanced intent detection with Hebrew keywords
     const intents = {
-      booking: ['תאם', 'שיעור', 'לקבוע', 'פנוי', 'זמינ', 'רוצה שיעור', 'אפשר לתאם', 'מחר', 'השבוע', 'בוא נקבע'],
-      schedule: ['לוח', 'שיעורים שלי', 'מתוכנן', 'קרוב', 'הבא', 'מה יש לי'],
-      cancel: ['לבטל', 'ביטול', 'לא יכול', 'לא אגיע', 'לבטל שיעור'],
-      reschedule: ['לשנות', 'להעביר', 'זמן אחר', 'לדחות', 'החלפה'],
-      availability: ['זמנים פנויים', 'מה פנוי', 'איזה זמנים', 'מתי יש', 'כשיש מקום'],
+      booking: ['תאם', 'שיעור', 'לקבוע', 'פנוי', 'זמין', 'רוצה שיעור', 'אפשר לתאם', 'מחר', 'השבוע', 'בוא נקבע', 'אני רוצה', 'צריך'],
+      schedule: ['לוח', 'שיעורים שלי', 'מתוכנן', 'קרוב', 'הבא', 'מה יש לי', 'השיעורים שלי'],
+      cancel: ['לבטל', 'ביטול', 'לא יכול', 'לא אגיע', 'לבטל שיעור', 'בטל'],
+      reschedule: ['לשנות', 'להעביר', 'זמן אחר', 'לדחות', 'החלפה', 'להחליף'],
+      availability: ['זמנים פנויים', 'מה פנוי', 'איזה זמנים', 'מתי יש', 'כשיש מקום', 'זמינים'],
       waitlist: ['רשימת המתנה', 'להמתין', 'כשיתפנה', 'אם יבטלו'],
       contact: ['פרטי המורה', 'טלפון', 'אימייל', 'איך ליצור קשר', 'פרטים'],
       help: ['עזרה', 'לא מבין', 'איך', 'מה אפשר', 'הוראות', 'מבולבל']
@@ -605,7 +616,7 @@ const handleGeneralMessage = async (ctx, message, student) => {
       }
     }
 
-    // If we have a clear intent based on keywords
+    // If we have a clear intent based on keywords, handle directly
     if (maxMatches > 0) {
       switch (detectedIntent) {
         case 'booking':
@@ -615,12 +626,20 @@ const handleGeneralMessage = async (ctx, message, student) => {
             await handleBookingRequest(ctx, message, student);
           } else {
             await ctx.reply(
-              '📚 <b>תיאום שיעור</b>\n\nמעולה! בואו נתאם לך שיעור מתמטיקה.\n\n💡 <b>דוגמאות למה שאתה יכול לכתוב:</b>\n• "אני רוצה שיעור מחר בשעה 4"\n• "אני פנוי ביום שלישי אחר הצהריים"\n• "תתאם לי משהו השבוע הבא"\n• "איזה זמנים פנויים יש השבוע?"\n\nפשוט ספר לי מתי אתה פנוי! 🕐',
+              `${student.getDisplayName()}, בואו נתאם לך שיעור מתמטיקה! 📚
+
+💡 <b>דוגמאות למה שאתה יכול לכתוב:</b>
+• "אני רוצה שיעור מחר בשעה 5"
+• "אני פנוי ביום רביעי בצהריים"  
+• "תתאם לי משהו השבוע הבא"
+• "איזה זמנים פנויים יש השבוע?"
+
+פשוט ספר לי מתי אתה פנוי! 🕐`,
               {
                 parse_mode: 'HTML',
                 reply_markup: Markup.inlineKeyboard([
                   [Markup.button.callback('📅 הצג זמנים זמינים', 'show_available_times')],
-                  [Markup.button.callback('❓ דוגמאות נוספות', 'help')]
+                  [Markup.button.callback('🗣️ שיחה טבעית עם שפיר', 'book_different_time')]
                 ]).reply_markup
               }
             );
@@ -629,7 +648,7 @@ const handleGeneralMessage = async (ctx, message, student) => {
           break;
 
         case 'schedule':
-          await ctx.reply('📅 בואו נבדוק את השיעורים שלך!', {
+          await ctx.reply(`${student.getDisplayName()}, בואו נבדוק את השיעורים שלך! 📅`, {
             reply_markup: Markup.inlineKeyboard([
               [Markup.button.callback('📋 השיעורים שלי', 'my_lessons')]
             ]).reply_markup
@@ -638,7 +657,11 @@ const handleGeneralMessage = async (ctx, message, student) => {
 
         case 'cancel':
           await ctx.reply(
-            '❌ <b>ביטול שיעור</b>\n\nאתה רוצה לבטל שיעור? בחר את השיעור מהרשימה:\n\n⚠️ <b>שים לב:</b> ביטול פחות מ-24 שעות מראש יחויב בתשלום 50%',
+            `${student.getDisplayName()}, אני אעזור לך לבטל שיעור. ❌
+
+בחר את השיעור מהרשימה:
+
+⚠️ <b>שים לב:</b> ביטול פחות מ-24 שעות מראש יחויב בתשלום 50%`,
             {
               parse_mode: 'HTML',
               reply_markup: Markup.inlineKeyboard([
@@ -651,7 +674,9 @@ const handleGeneralMessage = async (ctx, message, student) => {
 
         case 'reschedule':
           await ctx.reply(
-            '🔄 <b>החלפת שיעור</b>\n\nאתה רוצה לשנות זמן של שיעור קיים? בחר את השיעור מהרשימה:',
+            `${student.getDisplayName()}, אני אעזור לך לשנות זמן שיעור! 🔄
+
+בחר את השיעור שתרצה לשנות:`,
             {
               parse_mode: 'HTML',
               reply_markup: Markup.inlineKeyboard([
@@ -663,7 +688,7 @@ const handleGeneralMessage = async (ctx, message, student) => {
           break;
 
         case 'availability':
-          await ctx.reply('📅 בואו נבדוק מה פנוי השבוע!', {
+          await ctx.reply(`${student.getDisplayName()}, בואו נבדוק מה פנוי השבוע! 📅`, {
             reply_markup: Markup.inlineKeyboard([
               [Markup.button.callback('📅 זמנים זמינים', 'show_available_times')]
             ]).reply_markup
@@ -672,7 +697,11 @@ const handleGeneralMessage = async (ctx, message, student) => {
 
         case 'waitlist':
           await ctx.reply(
-            '⏰ <b>רשימת המתנה</b>\n\nאתה רוצה להיות ברשימת המתנה? ספר לי איזה זמנים מעניינים אותך.\n\nדוגמה: "אני רוצה להיות ברשימת המתנה לימי שני אחר הצהריים"',
+            `${student.getDisplayName()}, רוצה להיות ברשימת המתנה? ⏰
+
+ספר לי איזה זמנים מעניינים אותך.
+
+דוגמה: "אני רוצה להיות ברשימת המתנה לימי שני אחר הצהריים"`,
             {
               parse_mode: 'HTML',
               reply_markup: Markup.inlineKeyboard([
@@ -684,7 +713,7 @@ const handleGeneralMessage = async (ctx, message, student) => {
           break;
 
         case 'contact':
-          await ctx.reply('📞 בואו נציג לך את פרטי המורה!', {
+          await ctx.reply(`${student.getDisplayName()}, בואו נציג לך את פרטי המורה! 📞`, {
             reply_markup: Markup.inlineKeyboard([
               [Markup.button.callback('📞 פרטי המורה', 'contact_teacher')]
             ]).reply_markup
@@ -692,7 +721,7 @@ const handleGeneralMessage = async (ctx, message, student) => {
           break;
 
         case 'help':
-          await ctx.reply('❓ בואו נעזור לך להבין איך הכל עובד!', {
+          await ctx.reply(`${student.getDisplayName()}, בואו נעזור לך להבין איך הכל עובד! ❓`, {
             reply_markup: Markup.inlineKeyboard([
               [Markup.button.callback('❓ עזרה מלאה', 'help')]
             ]).reply_markup
@@ -700,7 +729,7 @@ const handleGeneralMessage = async (ctx, message, student) => {
           break;
       }
     } else {
-      // Try AI processing as fallback
+      // Try AI processing as fallback - but with better error handling
       try {
         const aiResult = await aiScheduler.processSchedulingRequest(message, {
           id: student.id,
@@ -708,34 +737,58 @@ const handleGeneralMessage = async (ctx, message, student) => {
           timezone: student.timezone || 'Asia/Jerusalem'
         });
 
+        // Always use the natural response from AI if available
+        if (aiResult.natural_response) {
+          await ctx.reply(aiResult.natural_response, { parse_mode: 'HTML' });
+          
+          // If it's a booking intent with good confidence, proceed to booking
+          if (aiResult.intent === 'book_lesson' && aiResult.confidence > 0.6) {
+            ctx.session.step = 'booking_request';
+          }
+          return;
+        }
+
+        // If no natural response, use intent-based response
         if (aiResult.intent === 'book_lesson' && aiResult.confidence > 0.6) {
           ctx.session.step = 'booking_request';
           await handleBookingRequest(ctx, message, student);
         } else {
-          // Provide helpful default response
+          // Provide helpful fallback response in Hebrew
           await ctx.reply(
-            `🤔 <b>לא הבנתי בדיוק מה אתה רוצה לעשות</b>\n\n💡 <b>אתה יכול:</b>\n• לתאם שיעור חדש\n• לבדוק את השיעורים שלך\n• לבטל או לשנות שיעור\n• להצטרף לרשימת המתנה\n• לעדכן פרטים אישיים\n\n📝 <b>דוגמאות למה שאתה יכול לכתוב:</b>\n• "אני רוצה שיעור מחר בשעה 3"\n• "מה השיעורים שלי השבוע?"\n• "אני רוצה לבטל שיעור"\n• "איזה זמנים פנויים יש?"`,
+            `${student.getDisplayName()}, אני כאן לעזור לך! 😊
+
+💡 <b>אתה יכול:</b>
+• לתאם שיעור חדש - "אני רוצה שיעור מחר ב5"
+• לבדוק את השיעורים שלך - "מה השיעורים שלי?"
+• לבטל או לשנות שיעור - "אני רוצה לבטל שיעור"
+• לבדוק זמנים זמינים - "איזה זמנים פנויים יש?"
+
+📝 <b>טיפ:</b> תוכל לכתוב בצורה טבעית, למשל "בואו נקבע שיעור לרביעי בצהריים"`,
             {
               parse_mode: 'HTML',
               reply_markup: Markup.inlineKeyboard([
                 [Markup.button.callback('📚 תאם שיעור', 'book_lesson')],
                 [Markup.button.callback('📋 השיעורים שלי', 'my_lessons')],
-                [Markup.button.callback('❓ עזרה מלאה', 'help')],
-                [Markup.button.callback('⚙️ הגדרות', 'settings')]
+                [Markup.button.callback('❓ עזרה מלאה', 'help')]
               ]).reply_markup
             }
           );
         }
       } catch (aiError) {
         logger.error('AI processing failed:', aiError);
-        // Fallback to default response
+        // Excellent Hebrew fallback when AI completely fails
         await ctx.reply(
-          '🤖 <b>אני כאן לעזור לך!</b>\n\nבחר מהתפריט למטה מה תרצה לעשות:',
+          `${student.getDisplayName()}, אני כאן לעזור לך! 🤖
+
+יש לי קצת בעיה עם המערכת החכמה, אבל אני עדיין יכול לעזור לך עם כל מה שאתה צריך.
+
+בחר מהתפריט למטה מה תרצה לעשות:`,
           {
             parse_mode: 'HTML',
             reply_markup: Markup.inlineKeyboard([
               [Markup.button.callback('📚 תאם שיעור', 'book_lesson')],
               [Markup.button.callback('📋 השיעורים שלי', 'my_lessons')],
+              [Markup.button.callback('📅 זמנים זמינים', 'show_available_times')],
               [Markup.button.callback('❓ עזרה', 'help')]
             ]).reply_markup
           }
@@ -745,8 +798,11 @@ const handleGeneralMessage = async (ctx, message, student) => {
 
   } catch (error) {
     logger.error('Error processing general message:', error);
+    // Even error messages should be in Hebrew
     await ctx.reply(
-      '😅 נתקלתי בקושי להבין את ההודעה. בואו ננסה שוב:',
+      `${student.getDisplayName()}, מצטער! 😅
+
+נתקלתי בקושי קטן. בואו ננסה שוב:`,
       {
         reply_markup: Markup.inlineKeyboard([
           [Markup.button.callback('📚 תאם שיעור', 'book_lesson')],

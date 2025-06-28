@@ -75,20 +75,24 @@ const logger = winston.createLogger({
 
 // Add specialized bot logging
 logger.botLog = (level, userId, username, message, metadata = {}) => {
-  logger.log(level, `BOT [${userId}@${username || 'unknown'}]: ${message}`, {
-    botInteraction: true,
+  // Convert 'text_message' to 'info' since it's not a valid winston level
+  const logLevel = level === 'text_message' ? 'info' : level;
+  
+  logger.log(logLevel, `BOT [${userId}@${username || 'unknown'}]: ${message}`, {
+    type: 'bot_interaction',
     userId,
     username,
+    originalLevel: level,
     ...metadata
   });
 };
 
 // Add AI-specific logging
-logger.aiLog = (action, message, response, metadata = {}) => {
+logger.aiLog = (action, prompt, response, metadata = {}) => {
   logger.info(`AI ${action}`, {
-    aiInteraction: true,
-    message: message?.substring(0, 100),
-    response: response?.substring(0, 200),
+    type: 'ai_interaction',
+    prompt: prompt?.substring(0, 100) + (prompt?.length > 100 ? '...' : ''),
+    response: response?.substring(0, 100) + (response?.length > 100 ? '...' : ''),
     ...metadata
   });
 };
@@ -105,16 +109,6 @@ logger.scheduleLog = (event, details, metadata = {}) => {
     ...details,
     ...metadata,
     type: 'schedule_event'
-  });
-};
-
-// Add method for logging AI interactions
-logger.aiLog = (action, prompt, response, metadata = {}) => {
-  logger.info(`AI ${action}`, {
-    prompt: prompt?.substring(0, 100) + (prompt?.length > 100 ? '...' : ''),
-    response: response?.substring(0, 100) + (response?.length > 100 ? '...' : ''),
-    ...metadata,
-    type: 'ai_interaction'
   });
 };
 
