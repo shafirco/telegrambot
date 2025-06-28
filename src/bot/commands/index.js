@@ -39,15 +39,19 @@ const start = async (ctx) => {
       [Markup.button.callback('📚 תיאום שיעור', 'book_lesson')],
       [
         Markup.button.callback('📅 לוח הזמנים שלי', 'my_schedule'),
-        Markup.button.callback('❓ עזרה', 'help')
+        Markup.button.callback('📋 השיעורים שלי', 'my_lessons')
       ],
       [
         Markup.button.callback('🔄 החלף שיעור', 'reschedule_lesson'),
         Markup.button.callback('❌ בטל שיעור', 'cancel_lesson')
       ],
       [
+        Markup.button.callback('📊 המצב שלי', 'my_status'),
+        Markup.button.callback('👨‍🏫 פרטי המורה', 'teacher_details')
+      ],
+      [
         Markup.button.callback('⚙️ הגדרות', 'settings'),
-        Markup.button.callback('📊 סטטוס', 'my_status')
+        Markup.button.callback('❓ עזרה', 'help')
       ]
     ]);
 
@@ -224,7 +228,7 @@ const status = async (ctx) => {
         where: {
           student_id: student.id,
           status: {
-            [Op.in]: ['scheduled', 'confirmed', 'pending']
+            [Op.notIn]: ['cancelled_by_student', 'cancelled_by_teacher', 'no_show']
           }
         }
       }),

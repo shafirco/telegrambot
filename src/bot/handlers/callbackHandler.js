@@ -37,8 +37,20 @@ async function handle(ctx) {
         await handleMySchedule(ctx, student);
         break;
         
+      case 'my_lessons':
+        await handleMyLessons(ctx, student);
+        break;
+        
       case 'my_status':
         await handleMyStatus(ctx, student);
+        break;
+        
+      case 'teacher_details':
+        await handleTeacherDetails(ctx, student);
+        break;
+        
+      case 'lesson_details':
+        await handleLessonDetails(ctx, callbackData, student);
         break;
         
       case 'help':
@@ -555,15 +567,31 @@ async function handleConfirm(ctx, callbackData, student) {
  * Handle back to menu callback
  */
 async function handleBackToMenu(ctx, student) {
+  // Clear all conversation state
+  if (ctx.session) {
+    ctx.session.step = null;
+    ctx.session.data = {};
+    ctx.session.reschedule_lesson_id = null;
+    ctx.session.lastActivity = Date.now();
+  }
+  
   const buttons = Markup.inlineKeyboard([
-    [Markup.button.callback('📚 הזמן שיעור', 'book_lesson')],
+    [Markup.button.callback('📚 תיאום שיעור', 'book_lesson')],
     [
-      Markup.button.callback('📅 הלוח שלי', 'my_schedule'),
-      Markup.button.callback('📊 המצב שלי', 'my_status')
+      Markup.button.callback('📅 לוח הזמנים שלי', 'my_schedule'),
+      Markup.button.callback('📋 השיעורים שלי', 'my_lessons')
     ],
     [
-      Markup.button.callback('❓ עזרה', 'help'),
-      Markup.button.callback('⚙️ הגדרות', 'settings')
+      Markup.button.callback('🔄 החלף שיעור', 'reschedule_lesson'),
+      Markup.button.callback('❌ בטל שיעור', 'cancel_lesson')
+    ],
+    [
+      Markup.button.callback('📊 המצב שלי', 'my_status'),
+      Markup.button.callback('👨‍🏫 פרטי המורה', 'teacher_details')
+    ],
+    [
+      Markup.button.callback('⚙️ הגדרות', 'settings'),
+      Markup.button.callback('❓ עזרה', 'help')
     ]
   ]);
 
@@ -585,6 +613,8 @@ async function handleBackToMenu(ctx, student) {
       }
     );
   }
+  
+  logger.info(`Main menu displayed for student ${student.id}`);
 }
 
 /**
@@ -1354,9 +1384,6 @@ async function handleUpdatePersonalDetails(ctx, student) {
 📝 <b>שם מלא:</b> ${student.full_name || 'לא הוגדר'}
 📧 <b>אימייל:</b> ${student.email || 'לא הוגדר'}
 📱 <b>טלפון:</b> ${student.phone_number || 'לא הוגדר'}
-👨‍👩‍👧‍👦 <b>שם הורה:</b> ${student.parent_name || 'לא הוגדר'}
-📞 <b>טלפון הורה:</b> ${student.parent_phone || 'לא הוגדר'}
-📮 <b>אימייל הורה:</b> ${student.parent_email || 'לא הוגדר'}
 
 איזה פרט תרצה לעדכן?
   `;
@@ -1367,9 +1394,7 @@ async function handleUpdatePersonalDetails(ctx, student) {
       [Markup.button.callback('📝 שם מלא', 'update_detail_name')],
       [Markup.button.callback('📧 אימייל', 'update_detail_email')],
       [Markup.button.callback('📱 טלפון', 'update_detail_phone')],
-      [Markup.button.callback('👨‍👩‍👧‍👦 שם הורה', 'update_detail_parent_name')],
-      [Markup.button.callback('📞 טלפון הורה', 'update_detail_parent_phone')],
-      [Markup.button.callback('📮 אימייל הורה', 'update_detail_parent_email')],
+      [Markup.button.callback('👨‍👩‍👧‍👦 עדכון פרטי הורה', 'update_parent_details')],
       [Markup.button.callback('🔙 חזרה לתפריט הראשי', 'back_to_menu')]
     ]).reply_markup
   });
@@ -1466,7 +1491,7 @@ async function handleConfirmCancel(ctx, callbackData, student) {
 
     // Cancel the lesson
     await lesson.update({
-      status: 'cancelled',
+      status: 'cancelled_by_student',
       cancelled_at: new Date(),
       cancelled_by: 'student',
       cancellation_reason: isLateCancel ? 'Late cancellation with fee' : 'Standard cancellation'
@@ -1546,42 +1571,7 @@ async function handleUpdateDetailField(ctx, callbackData, student) {
   ctx.session.step = `updating_${field}`;
 }
 
-/**
- * Handle back to menu - reset conversation state
- */
-async function handleBackToMenu(ctx, student) {
-  try {
-    // Clear all conversation state
-    ctx.session.step = null;
-    ctx.session.data = {};
-    ctx.session.reschedule_lesson_id = null;
-    ctx.session.lastActivity = Date.now();
-    
-    logger.info(`Conversation state reset for student ${student.id}`);
-    
-    // Show main menu
-    const { Markup } = require('telegraf');
-    
-    await ctx.reply(
-      `🏠 <b>התפריט הראשי</b>\n\nמה תרצה לעשות?`,
-      {
-        parse_mode: 'HTML',
-        reply_markup: Markup.inlineKeyboard([
-          [Markup.button.callback('📅 תאום שיעור', 'book_lesson')],
-          [Markup.button.callback('📋 השיעורים שלי', 'my_lessons')],
-          [Markup.button.callback('🔄 החלף שיעור', 'reschedule_lesson')],
-          [Markup.button.callback('❌ בטל שיעור', 'cancel_lesson')],
-          [Markup.button.callback('👤 פרטים אישיים', 'settings')],
-          [Markup.button.callback('📞 פרטי המורה', 'teacher_contact')]
-        ]).reply_markup
-      }
-    );
-    
-  } catch (error) {
-    logger.error('Error handling back to menu:', error);
-    await ctx.reply('❌ סליחה, משהו השתבש. אנא נסה שוב.');
-  }
-}
+
 
 /**
  * Handle booking alternative time slots
@@ -1868,6 +1858,199 @@ async function handleRescheduleCustom(ctx, callbackData, student) {
   }
 }
 
+/**
+ * Handle my lessons callback - show student's lessons
+ */
+async function handleMyLessons(ctx, student) {
+  try {
+    // Get student's lessons 
+    const lessons = await Lesson.findAll({
+      where: { 
+        student_id: student.id,
+        status: {
+          [Op.notIn]: ['cancelled_by_student', 'cancelled_by_teacher']
+        }
+      },
+      order: [['start_time', 'ASC']]
+    });
+
+    if (lessons.length === 0) {
+      await ctx.reply('📋 <b>השיעורים שלי</b>\n\n🚫 אין לך שיעורים מתוכננים כרגע.\n\nרוצה לתאם שיעור חדש?', {
+        parse_mode: 'HTML',
+        reply_markup: Markup.inlineKeyboard([
+          [Markup.button.callback('📚 תאם שיעור חדש', 'book_lesson')],
+          [Markup.button.callback('🏠 תפריט ראשי', 'back_to_menu')]
+        ]).reply_markup
+      });
+      return;
+    }
+
+    let message = '📋 <b>השיעורים שלי</b>\n\n';
+    const keyboard = [];
+
+    for (const lesson of lessons) {
+      const startTime = moment(lesson.start_time).tz(student.timezone || 'Asia/Jerusalem');
+      const dayName = getHebrewDayName(startTime.format('dddd'));
+      const dateStr = startTime.format('DD/MM/YYYY');
+      const timeStr = startTime.format('HH:mm');
+      
+      const statusIcon = lesson.status === 'confirmed' ? '✅' : '⏳';
+      message += `${statusIcon} <b>${dayName}, ${dateStr}</b>\n`;
+      message += `🕐 ${timeStr} (${lesson.duration_minutes} דקות)\n`;
+      message += `📖 ${lesson.subject}\n`;
+      if (lesson.topic) message += `📚 ${lesson.topic}\n`;
+      message += '\n';
+
+      // Add action buttons for each lesson
+      keyboard.push([
+        Markup.button.callback('📝 פרטים', `lesson_details_${lesson.id}`),
+        Markup.button.callback('🔄 החלף', `reschedule_lesson_${lesson.id}`),
+        Markup.button.callback('❌ בטל', `cancel_lesson_${lesson.id}`)
+      ]);
+    }
+
+    // Add general buttons
+    keyboard.push([Markup.button.callback('📚 תאם שיעור נוסף', 'book_lesson')]);
+    keyboard.push([Markup.button.callback('🏠 תפריט ראשי', 'back_to_menu')]);
+
+    await ctx.reply(message, {
+      parse_mode: 'HTML',
+      reply_markup: Markup.inlineKeyboard(keyboard).reply_markup
+    });
+
+  } catch (error) {
+    logger.error('Error in handleMyLessons:', error);
+    await ctx.reply('❌ שגיאה בטעינת השיעורים. אנא נסה שוב.', {
+      reply_markup: Markup.inlineKeyboard([
+        [Markup.button.callback('🔄 נסה שוב', 'my_lessons')],
+        [Markup.button.callback('🏠 תפריט ראשי', 'back_to_menu')]
+      ]).reply_markup
+    });
+  }
+}
+
+/**
+ * Handle teacher details callback - show teacher contact info
+ */
+async function handleTeacherDetails(ctx, student) {
+  const message = `👨‍🏫 <b>פרטי המורה</b>\n\n` +
+    `📧 <b>אימייל:</b> shafshaf6@gmail.com\n` +
+    `📱 <b>טלפון:</b> 0544271232\n\n` +
+    `ניתן ליצור קשר עם המורה בכל עת לשאלות או בעיות טכניות.\n\n` +
+    `💡 <b>טיפ:</b> עדיף לתאם שיעורים דרך הבוט כדי שהכל יהיה מסונכרן!`;
+
+  await ctx.reply(message, {
+    parse_mode: 'HTML',
+    reply_markup: Markup.inlineKeyboard([
+      [Markup.button.callback('📞 צור קשר', 'contact_teacher')],
+      [Markup.button.callback('🏠 תפריט ראשי', 'back_to_menu')]
+    ]).reply_markup
+  });
+}
+
+/**
+ * Handle lesson details callback - show details of a specific lesson
+ */
+async function handleLessonDetails(ctx, callbackData, student) {
+  try {
+    const lessonId = callbackData.split('_')[2];
+    const lesson = await Lesson.findByPk(lessonId);
+
+    if (!lesson || lesson.student_id !== student.id) {
+      await ctx.reply('❌ השיעור לא נמצא או שאינו שייך לך.', {
+        reply_markup: Markup.inlineKeyboard([
+          [Markup.button.callback('🏠 תפריט ראשי', 'back_to_menu')]
+        ]).reply_markup
+      });
+      return;
+    }
+
+    const startTime = moment(lesson.start_time).tz(student.timezone || 'Asia/Jerusalem');
+    const dayName = getHebrewDayName(startTime.format('dddd'));
+    const dateStr = startTime.format('DD/MM/YYYY');
+    const timeStr = startTime.format('HH:mm');
+    const endTimeStr = moment(lesson.end_time).tz(student.timezone || 'Asia/Jerusalem').format('HH:mm');
+    
+    const statusEmoji = {
+      'scheduled': '🕐',
+      'confirmed': '✅',
+      'pending': '📝',
+      'completed': '🎓',
+      'cancelled_by_student': '❌',
+      'cancelled_by_teacher': '🚫',
+      'no_show': '🔴'
+    };
+
+    const statusText = {
+      'scheduled': 'מתוכנן',
+      'confirmed': 'מאושר',
+      'pending': 'ממתין לאישור',
+      'completed': 'הושלם',
+      'cancelled_by_student': 'בוטל על ידך',
+      'cancelled_by_teacher': 'בוטל על ידי המורה',
+      'no_show': 'לא הגעת'
+    };
+
+    let message = `📝 <b>פרטי השיעור</b>\n\n`;
+    message += `📅 <b>תאריך:</b> ${dayName}, ${dateStr}\n`;
+    message += `🕐 <b>שעה:</b> ${timeStr} - ${endTimeStr}\n`;
+    message += `⏱️ <b>משך:</b> ${lesson.duration_minutes} דקות\n`;
+    message += `${statusEmoji[lesson.status] || '📝'} <b>סטטוס:</b> ${statusText[lesson.status] || lesson.status}\n`;
+    message += `📚 <b>נושא:</b> ${lesson.subject}\n`;
+    
+    if (lesson.topic) {
+      message += `📖 <b>נושא ספציפי:</b> ${lesson.topic}\n`;
+    }
+    
+    if (lesson.difficulty_level) {
+      message += `⭐ <b>רמת קושי:</b> ${lesson.difficulty_level}\n`;
+    }
+    
+    if (lesson.price_amount) {
+      message += `💰 <b>מחיר:</b> ${lesson.price_amount} ${lesson.currency || 'ILS'}\n`;
+    }
+    
+    if (lesson.meeting_link) {
+      message += `🔗 <b>קישור למפגש:</b> ${lesson.meeting_link}\n`;
+    }
+    
+    if (lesson.teacher_notes) {
+      message += `📝 <b>הערות מורה:</b> ${lesson.teacher_notes}\n`;
+    }
+    
+    if (lesson.student_notes) {
+      message += `📋 <b>ההערות שלך:</b> ${lesson.student_notes}\n`;
+    }
+    
+    message += `\n📅 <b>נקבע בתאריך:</b> ${moment(lesson.booking_date).format('DD/MM/YYYY')}\n`;
+
+    const buttons = [];
+    
+    // Add action buttons based on lesson status
+    if (lesson.isActive() && lesson.isInFuture()) {
+      buttons.push([
+        Markup.button.callback('🔄 החלף', `reschedule_lesson_${lesson.id}`),
+        Markup.button.callback('❌ בטל', `cancel_lesson_${lesson.id}`)
+      ]);
+    }
+    
+    buttons.push([Markup.button.callback('🏠 תפריט ראשי', 'back_to_menu')]);
+
+    await ctx.reply(message, {
+      parse_mode: 'HTML',
+      reply_markup: Markup.inlineKeyboard(buttons).reply_markup
+    });
+
+  } catch (error) {
+    logger.error('Error in handleLessonDetails:', error);
+    await ctx.reply('❌ שגיאה בטעינת פרטי השיעור. אנא נסה שוב.', {
+      reply_markup: Markup.inlineKeyboard([
+        [Markup.button.callback('🏠 תפריט ראשי', 'back_to_menu')]
+      ]).reply_markup
+    });
+  }
+}
+
 module.exports = {
   handle,
   handleJoinWaitlist,
@@ -1875,5 +2058,8 @@ module.exports = {
   handleWaitlistTime,
   handleStudentDetailsUpdate,
   handleBackToMenu,
-  handleUpdateParentDetails
+  handleUpdateParentDetails,
+  handleMyLessons,
+  handleTeacherDetails,
+  handleLessonDetails
 }; 

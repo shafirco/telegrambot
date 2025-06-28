@@ -996,7 +996,12 @@ async function handleDetailsUpdate(ctx, message, student, field) {
     const value = message.trim();
     
     if (!value || value.length < 2) {
-      await ctx.reply('הערך שהוזן קצר מדי. אנא נסה שוב:');
+      await ctx.reply('הערך שהוזן קצר מדי. אנא נסה שוב:', {
+        reply_markup: Markup.inlineKeyboard([
+          [Markup.button.callback('🚫 בטל עדכון', 'back_to_menu')],
+          [Markup.button.callback('📞 עזרה', 'help')]
+        ]).reply_markup
+      });
       return;
     }
 
@@ -1029,7 +1034,12 @@ async function handleDetailsUpdate(ctx, message, student, field) {
     // Simple validation for email
     if (field === 'email' || field === 'parent_email') {
       if (!value.includes('@') || !value.includes('.')) {
-        await ctx.reply('❌ כתובת האימייל לא תקינה. אנא הזן כתובת אימייל תקינה:');
+        await ctx.reply('❌ כתובת האימייל לא תקינה. אנא הזן כתובת אימייל תקינה:', {
+          reply_markup: Markup.inlineKeyboard([
+            [Markup.button.callback('🚫 בטל עדכון', 'back_to_menu')],
+            [Markup.button.callback('📞 עזרה', 'help')]
+          ]).reply_markup
+        });
         return;
       }
     }
@@ -1038,7 +1048,12 @@ async function handleDetailsUpdate(ctx, message, student, field) {
     if (field === 'phone' || field === 'parent_phone') {
       const phoneRegex = /^[\d\s\-\+\(\)]{9,15}$/;
       if (!phoneRegex.test(value)) {
-        await ctx.reply('❌ מספר הטלפון לא תקין. אנא הזן מספר טלפון תקין:');
+        await ctx.reply('❌ מספר הטלפון לא תקין. אנא הזן מספר טלפון תקין:', {
+          reply_markup: Markup.inlineKeyboard([
+            [Markup.button.callback('🚫 בטל עדכון', 'back_to_menu')],
+            [Markup.button.callback('📞 עזרה', 'help')]
+          ]).reply_markup
+        });
         return;
       }
     }
