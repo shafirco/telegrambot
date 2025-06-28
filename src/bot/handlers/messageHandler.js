@@ -409,11 +409,16 @@ const showEnhancedAvailableSlots = async (ctx, slots, aiResult) => {
     reply_markup: Markup.inlineKeyboard(buttons).reply_markup
   });
 
-  // Store enhanced data in session
+  // Store enhanced data in session (ensure compatibility with callback handler)
+  if (!ctx.session) {
+    ctx.session = {};
+  }
+  ctx.session.availableSlots = slots; // Direct access for callback handler
   ctx.session.data = ctx.session.data || {};
-  ctx.session.data.availableSlots = slots;
+  ctx.session.data.availableSlots = slots; // Backup location
   ctx.session.data.aiResult = aiResult;
   ctx.session.step = 'enhanced_slot_selection';
+  ctx.session.lastActivity = Date.now(); // Update session activity
 };
 
 const handleWaitlistRequest = async (ctx, message, student) => {
@@ -481,11 +486,16 @@ const showAvailableSlots = async (ctx, slots, schedulingData) => {
     reply_markup: Markup.inlineKeyboard(buttons).reply_markup
   });
 
-  // Store slots in session for booking
+  // Store slots in session for booking (ensure compatibility with callback handler)
+  if (!ctx.session) {
+    ctx.session = {};
+  }
+  ctx.session.availableSlots = slots; // Direct access for callback handler
   ctx.session.data = ctx.session.data || {};
-  ctx.session.data.availableSlots = slots;
+  ctx.session.data.availableSlots = slots; // Backup location
   ctx.session.data.schedulingData = schedulingData;
   ctx.session.step = 'slot_selection';
+  ctx.session.lastActivity = Date.now(); // Update session activity
 };
 
 const showWaitlistOptions = async (ctx, alternativeSlots, schedulingData) => {

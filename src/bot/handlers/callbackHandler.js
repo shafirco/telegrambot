@@ -187,7 +187,7 @@ async function handleBookLesson(ctx, student) {
 async function handleMyStatus(ctx, student) {
   try {
     const { Op } = require('sequelize');
-    const settings = require('../../config/settings');
+    // Remove duplicate settings import - already imported globally
     const { Lesson, Waitlist } = require('../../models');
     
     // Get accurate lesson counts from database

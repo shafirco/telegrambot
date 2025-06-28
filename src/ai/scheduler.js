@@ -88,10 +88,18 @@ class AIScheduler {
 - אורך שיעור: 60 דקות
 - אזור זמן: Asia/Jerusalem
 
+🕐 **הבנת זמנים חכמה:**
+- מספרים בודדים (1-7) = אחר הצהריים/ערב (13:00-19:00)
+- "5" = 17:00, "3" = 15:00, "6" = 18:00
+- "רביעי בצהריים" = Wednesday 12:00
+- "מחר ב5" = Tomorrow 17:00
+- "שלישי אחרי 4" = Tuesday after 16:00
+
 🗣️ **איך לנהל שיחה:**
 - תמיד ענה בעברית בלבד!
 - היה חם ואישי
 - הבן גם ביטויים לא פורמליים
+- הבן זמנים גמישים ומספרים בודדים
 - אם לא הבנת - בקש הבהרה בצורה נחמדה
 - הצע פתרונות ואלטרנטיבות
 
@@ -335,7 +343,13 @@ class AIScheduler {
       { pattern: /(\d+) בערב/, match: 1, modifier: 'evening' },
       { pattern: /(\d+):(\d+)/, timeFormat: true }, // HH:MM format
       { pattern: /אחרי (\d+)/, match: 1, modifier: 'after' }, // אחרי 3 = after 3
-      { pattern: /לפני (\d+)/, match: 1, modifier: 'before' } // לפני 4 = before 4
+      { pattern: /לפני (\d+)/, match: 1, modifier: 'before' }, // לפני 4 = before 4
+      // Enhanced standalone number patterns - better flexibility
+      { pattern: /\b(\d{1,2})\b(?!:)/, match: 1, modifier: 'smart_default' }, // Standalone numbers like "5"
+      { pattern: /(\d+)\s*וחצי/, match: 1, modifier: 'half_hour' }, // "5 וחצי" = 5:30
+      { pattern: /ברבע לפני (\d+)/, match: 1, modifier: 'quarter_before' }, // רבע לפני 5 = 4:45
+      { pattern: /ברבע אחרי (\d+)/, match: 1, modifier: 'quarter_after' }, // רבע אחרי 5 = 5:15
+      { pattern: /וחצי אחרי (\d+)/, match: 1, modifier: 'half_after' } // חצי אחרי 5 = 5:30
     ];
 
     // Find day matches
@@ -365,10 +379,47 @@ class AIScheduler {
                 hour = timePattern.hour;
               } else if (timePattern.match) {
                 hour = parseInt(timeMatch[timePattern.match]);
+                
+                // Enhanced modifier handling for better time parsing
                 if (timePattern.modifier === 'afternoon' && hour <= 12) {
                   hour += 12;
                 } else if (timePattern.modifier === 'evening' && hour <= 8) {
                   hour += 12;
+                } else if (timePattern.modifier === 'smart_default') {
+                  // Smart default for standalone numbers: prefer afternoon/evening for lessons
+                  if (hour >= 1 && hour <= 7) {
+                    hour += 12; // 1-7 becomes 13:00-19:00 (1PM-7PM)
+                  } else if (hour >= 8 && hour <= 12) {
+                    // 8-12 stays as is (morning/noon hours)
+                    hour = hour; 
+                  } else if (hour === 0) {
+                    hour = 12; // midnight -> noon
+                  }
+                } else if (timePattern.modifier === 'half_hour') {
+                  // Handle "5 וחצי" = 5:30
+                  if (hour >= 1 && hour <= 7) {
+                    hour += 12; // Default to PM
+                  }
+                  targetDate.minute(30);
+                } else if (timePattern.modifier === 'quarter_before') {
+                  // רבע לפני 5 = 4:45
+                  hour = hour - 1;
+                  if (hour >= 1 && hour <= 7) {
+                    hour += 12;
+                  }
+                  targetDate.minute(45);
+                } else if (timePattern.modifier === 'quarter_after') {
+                  // רבע אחרי 5 = 5:15
+                  if (hour >= 1 && hour <= 7) {
+                    hour += 12;
+                  }
+                  targetDate.minute(15);
+                } else if (timePattern.modifier === 'half_after') {
+                  // חצי אחרי 5 = 5:30
+                  if (hour >= 1 && hour <= 7) {
+                    hour += 12;
+                  }
+                  targetDate.minute(30);
                 }
               } else if (timePattern.timeFormat) {
                 hour = parseInt(timeMatch[1]);
@@ -707,4 +758,4 @@ function generateNaturalResponse(intent, studentName = null, context = {}) {
   
   const responseList = responses[intent] || responses.general_conversation;
   return responseList[Math.floor(Math.random() * responseList.length)];
-} 
+}
