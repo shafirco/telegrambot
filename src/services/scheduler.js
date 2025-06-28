@@ -24,8 +24,7 @@ class SchedulerService {
 
       // Create AI scheduler if not exists
       if (!this.aiScheduler) {
-        const AIScheduler = require('../ai/scheduler');
-        this.aiScheduler = new AIScheduler();
+        this.aiScheduler = require('../ai/scheduler');
       }
 
       // Process with AI

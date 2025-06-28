@@ -7,8 +7,8 @@ const settings = require('../../config/settings');
 
 // Input validation and sanitization
 const validateAndSanitizeInput = (message) => {
-  if (!message || typeof message !== 'string') {
-    throw new Error('Invalid message format');
+  if (!message || typeof message !== 'string' || message.trim().length === 0) {
+    throw new Error('Empty message');
   }
   
   // Basic length validation

@@ -259,17 +259,19 @@ class AIScheduler {
     let intent = 'other';
     let confidence = 0.3;
 
-    // Enhanced Hebrew and English keywords with more variations
-    if (message.includes('תאם') || message.includes('שיעור') || message.includes('לתאם') || 
-        message.includes('רוצה') || message.includes('צריך') || message.includes('אפשר') ||
-        message.includes('book') || message.includes('schedule') || message.includes('lesson') || 
-        message.includes('want') || message.includes('need')) {
-      intent = 'book_lesson';
-      confidence = 0.7;
-    } else if (message.includes('ביטול') || message.includes('לבטל') || message.includes('מבטל') || 
-               message.includes('cancel') || message.includes('remove')) {
+    // Check cancellation first (more specific patterns)
+    if (message.includes('ביטול') || message.includes('לבטל') || message.includes('מבטל') || 
+        message.includes('בטל') || message.includes('לבטל את השיעור') || message.includes('אני רוצה לבטל') || 
+        message.includes('רוצה לבטל') || message.includes('cancel') || message.includes('remove') || 
+        message.includes('delete')) {
       intent = 'cancel_lesson';
       confidence = 0.8;
+    } else if (message.includes('תאם') || message.includes('שיעור') || message.includes('לתאם') || 
+               message.includes('רוצה') || message.includes('צריך') || message.includes('אפשר') ||
+               message.includes('book') || message.includes('schedule') || message.includes('lesson') || 
+               message.includes('want') || message.includes('need')) {
+      intent = 'book_lesson';
+      confidence = 0.7;
     } else if (message.includes('לשנות') || message.includes('להעביר') || message.includes('לדחות') || 
                message.includes('reschedule') || message.includes('change') || message.includes('move')) {
       intent = 'reschedule_lesson';
