@@ -451,7 +451,7 @@ When your preferred times aren't available, I can add you to the waitlist and no
 };
 
 // Settings command
-const settings = async (ctx) => {
+const settingsCommand = async (ctx) => {
   const student = ctx.student;
   
   // Get Hebrew day names for preferred days
@@ -547,7 +547,7 @@ const feedback = async (ctx) => {
 I'd love to hear your thoughts! You can:
 
 📝 <b>Send Feedback:</b>
-Just type your feedback or suggestions and I'll make sure ${config.teacher.name} receives it.
+Just type your feedback or suggestions and I'll make sure ${settings.teacher.name} receives it.
 
 🐛 <b>Report Issues:</b>
 If something isn't working correctly, describe the problem and I'll help resolve it.
@@ -719,7 +719,7 @@ module.exports = {
   cancel,
   status,
   waitlist,
-  settings,
+  settings: settingsCommand,
   feedback,
   admin,
   stats,
