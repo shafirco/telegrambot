@@ -95,7 +95,7 @@ describe('Basic Functionality Tests', () => {
     
     it('should have correct business hours', () => {
       assert.strictEqual(settings.businessHours.start, '10:00');
-      assert.strictEqual(settings.businessHours.end, '18:00');
+      assert.strictEqual(settings.businessHours.end, '19:00');
       assert(settings.businessHours.days.includes('ראשון'));
     });
     
@@ -110,8 +110,10 @@ describe('Basic Functionality Tests', () => {
     it('should correctly identify business hours', () => {
       const israelTime = moment.tz('2024-01-07 14:00', 'Asia/Jerusalem').toDate();
       const outsideHours = moment.tz('2024-01-07 20:00', 'Asia/Jerusalem').toDate();
+      const borderlineTime = moment.tz('2024-01-07 18:30', 'Asia/Jerusalem').toDate();
       
       assert.strictEqual(settings.isBusinessHour(israelTime), true);
+      assert.strictEqual(settings.isBusinessHour(borderlineTime), true);
       assert.strictEqual(settings.isBusinessHour(outsideHours), false);
     });
     
