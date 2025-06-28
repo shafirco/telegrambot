@@ -88,7 +88,7 @@ const settings = {
 
   // Time Slots Configuration
   timeSlots: {
-    intervalMinutes: 30,
+    intervalMinutes: 60, // Changed from 30 to 60 minutes - whole hours only
     generateAheadDays: 14,
     cleanupPastDays: 7
   },

@@ -695,7 +695,7 @@ ${Math.random() > 0.5 ? '🌟' : '💝'} Your input helps make the tutoring expe
 
     const buttons = Markup.inlineKeyboard([
       [Markup.button.callback('📚 Book Lesson', 'book_lesson')],
-      [Markup.button.callback('📅 My Schedule', 'my_schedule')]
+                    [Markup.button.callback('📅 השיעורים שלי', 'my_lessons')]
     ]);
 
     await ctx.reply('Is there anything else I can help you with?', {
@@ -900,7 +900,12 @@ async function handleStudentRegistration(ctx, student) {
       }
       
       if (!phoneNumber || phoneNumber.length < 9) {
-        await ctx.reply('מספר הטלפון לא תקין. אנא כתוב מספר תקין או השתמש בכפתור:');
+        await ctx.reply('מספר הטלפון לא תקין. אנא כתוב מספר תקין או השתמש בכפתור:', {
+          reply_markup: Markup.inlineKeyboard([
+            [Markup.button.callback('🚫 בטל רישום', 'back_to_menu')],
+            [Markup.button.callback('📞 עזרה', 'help')]
+          ]).reply_markup
+        });
         return true;
       }
       

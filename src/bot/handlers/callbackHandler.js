@@ -33,9 +33,11 @@ async function handle(ctx) {
         await handleBookLesson(ctx, student);
         break;
         
-
-        
       case 'my_lessons':
+        await handleMyLessons(ctx, student);
+        break;
+        
+      case 'my_schedule':
         await handleMyLessons(ctx, student);
         break;
         
@@ -169,7 +171,8 @@ async function handleBookLesson(ctx, student) {
     { 
       parse_mode: 'HTML',
       reply_markup: Markup.inlineKeyboard([
-        [Markup.button.callback('📅 הצג את כל הזמנים הזמינים', 'show_available_times')]
+        [Markup.button.callback('📅 הצג את כל הזמנים הזמינים', 'show_available_times')],
+        [Markup.button.callback('🏠 תפריט ראשי', 'back_to_menu')]
       ]).reply_markup
     }
   );
@@ -182,8 +185,19 @@ async function handleBookLesson(ctx, student) {
  * Handle my status callback
  */
 async function handleMyStatus(ctx, student) {
-  const commandHandlers = require('../commands');
-  await commandHandlers.status(ctx);
+  try {
+    // Ensure student is set in context
+    ctx.student = student;
+    const commandHandlers = require('../commands');
+    await commandHandlers.status(ctx);
+  } catch (error) {
+    logger.error('Error in handleMyStatus:', error);
+    await ctx.reply('❌ סליחה, הייתה שגיאה בהצגת המצב שלך. אנא נסה שוב.', {
+      reply_markup: Markup.inlineKeyboard([
+        [Markup.button.callback('🏠 תפריט ראשי', 'back_to_menu')]
+      ]).reply_markup
+    });
+  }
 }
 
 /**
@@ -441,7 +455,7 @@ async function handleBookSlot(ctx, callbackData, student) {
           { 
             parse_mode: 'HTML',
             reply_markup: Markup.inlineKeyboard([
-              [Markup.button.callback('📅 הצג את הלוח שלי', 'my_schedule')],
+              [Markup.button.callback('📅 השיעורים שלי', 'my_lessons')],
               [Markup.button.callback('🏠 תפריט ראשי', 'back_to_menu')]
             ]).reply_markup
           }
@@ -844,7 +858,8 @@ const handleWaitlistTime = async (ctx, student) => {
 
     const buttons = Markup.inlineKeyboard([
       [Markup.button.callback('📚 תאם שיעור אחר', 'book_lesson')],
-      [Markup.button.callback('📅 השיעורים שלי', 'my_schedule')]
+      [Markup.button.callback('📅 השיעורים שלי', 'my_lessons')],
+      [Markup.button.callback('🏠 תפריט ראשי', 'back_to_menu')]
     ]);
 
     await ctx.editMessageText(message, {
@@ -1020,7 +1035,7 @@ async function handleSelectTime(ctx, callbackData, student) {
           { 
             parse_mode: 'HTML',
             reply_markup: Markup.inlineKeyboard([
-              [Markup.button.callback('📅 הצג את הלוח שלי', 'my_schedule')],
+              [Markup.button.callback('📅 השיעורים שלי', 'my_lessons')],
               [Markup.button.callback('📚 תאם שיעור נוסף', 'book_lesson')],
               [Markup.button.callback('🏠 תפריט ראשי', 'back_to_menu')]
             ]).reply_markup
@@ -1776,7 +1791,7 @@ async function handleRescheduleConfirm(ctx, callbackData, student) {
           {
             parse_mode: 'HTML',
             reply_markup: Markup.inlineKeyboard([
-              [Markup.button.callback('📅 הצג את השיעורים שלי', 'my_schedule')],
+              [Markup.button.callback('📅 השיעורים שלי', 'my_lessons')],
               [Markup.button.callback('🔙 חזרה לתפריט הראשי', 'back_to_menu')]
             ]).reply_markup
           }

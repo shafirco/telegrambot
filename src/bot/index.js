@@ -205,8 +205,8 @@ bot.on('inline_query', async (ctx) => {
     if (query.includes('schedule') || query.includes('my')) {
       results.push({
         type: 'article',
-        id: 'my_schedule',
-        title: '📅 My Schedule',
+        id: 'my_lessons',
+        title: '📅 השיעורים שלי',
         description: 'View your upcoming lessons',
         input_message_content: {
           message_text: '/schedule'

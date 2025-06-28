@@ -100,9 +100,10 @@ const help = async (ctx) => {
   const buttons = Markup.inlineKeyboard([
     [Markup.button.callback('📚 תאם שיעור עכשיו', 'book_lesson')],
     [
-      Markup.button.callback('📅 השיעורים שלי', 'my_schedule'),
+      Markup.button.callback('📅 השיעורים שלי', 'my_lessons'),
       Markup.button.callback('⚙️ הגדרות', 'settings')
-    ]
+    ],
+    [Markup.button.callback('🏠 תפריט ראשי', 'back_to_menu')]
   ]);
 
   await ctx.reply(helpMessage, {
