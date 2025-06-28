@@ -451,13 +451,10 @@ class AIScheduler {
           for (const timePattern of timePatterns) {
             const timeMatch = timePattern.pattern.exec(message);
             if (timeMatch) {
-              console.log(`[DEBUG] Time pattern matched: ${timePattern.pattern}, modifier: ${timePattern.modifier}, match: ${timeMatch[0]}`);
               if (timePattern.hour) {
                 hour = timePattern.hour;
-                console.log(`[DEBUG] Using fixed hour: ${hour}`);
               } else if (timePattern.match) {
                 hour = parseInt(timeMatch[timePattern.match]);
-                console.log(`[DEBUG] Parsed hour from match: ${hour}, modifier: ${timePattern.modifier}`);
                 
                 // Enhanced modifier handling for better time parsing
                 if (timePattern.modifier === 'afternoon' && hour <= 12) {
@@ -466,33 +463,25 @@ class AIScheduler {
                   hour += 12;
                 } else if (timePattern.modifier === 'smart_default') {
                   // Enhanced smart default for standalone numbers: prefer afternoon/evening for lessons
-                  console.log(`[DEBUG] Smart default processing: hour=${hour}`);
                   if (hour >= 1 && hour <= 9) {
-                    console.log(`[DEBUG] Converting ${hour} to ${hour + 12} (PM)`);
                     // 1-9 becomes 13:00-21:00 (1PM-9PM) - most common lesson times
                     hour += 12;
                   } else if (hour === 10 || hour === 11) {
-                    console.log(`[DEBUG] Keeping ${hour} as morning`);
                     // 10-11 stays as morning (10AM-11AM)
                     hour = hour;
                   } else if (hour === 12) {
-                    console.log(`[DEBUG] Keeping ${hour} as noon`);
                     // 12 stays as noon
                     hour = 12;
                   } else if (hour === 0) {
-                    console.log(`[DEBUG] Converting 0 to 12 (noon)`);
                     // 0 becomes noon
                     hour = 12;
                   } else if (hour >= 13 && hour <= 21) {
-                    console.log(`[DEBUG] Keeping ${hour} as 24-hour format`);
                     // Already in 24-hour format, keep as is
                     hour = hour;
                   } else {
-                    console.log(`[DEBUG] Using fallback: ${hour} -> 17`);
                     // Default fallback to 5PM for unusual numbers
                     hour = 17;
                   }
-                  console.log(`[DEBUG] Final hour after smart_default: ${hour}`);
                 } else if (timePattern.modifier === 'half_hour') {
                   // Handle "5 וחצי" = 5:30
                   if (hour >= 1 && hour <= 7) {
@@ -530,8 +519,6 @@ class AIScheduler {
           
           targetDate.hour(hour).minute(0).second(0);
           
-          console.log(`[DEBUG] Final target date: ${targetDate.format('YYYY-MM-DD HH:mm')}, timezone: ${targetDate.format('Z')}`);
-          
           datetime_preferences.push({
             datetime: targetDate.toISOString(),
             date: targetDate.format('YYYY-MM-DD'),
@@ -539,8 +526,6 @@ class AIScheduler {
             flexibility: 'preferred',
             duration_minutes: studentProfile.preferredDuration || 60
           });
-          
-          console.log(`[DEBUG] Added datetime preference: ${targetDate.toISOString()}, time: ${targetDate.format('HH:mm')}`);
           
           break; // Found a day, stop looking
         }

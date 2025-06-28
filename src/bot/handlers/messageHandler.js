@@ -334,18 +334,13 @@ const handleBookingRequest = async (ctx, message, student) => {
     // Process the scheduling request
     const result = await schedulerService.processBookingRequest(message, student, { aiResult });
 
-    console.log('[DEBUG] Scheduler result:', JSON.stringify(result, null, 2));
-
     if (result && result.success) {
       if (result.type === 'slots_available') {
         // Show available slots with improved messaging
-        console.log('[DEBUG] Showing available slots:', result.availableSlots?.length);
         await showEnhancedAvailableSlots(ctx, result.availableSlots, aiResult);
       } else if (result.type === 'general_response') {
-        console.log('[DEBUG] General response:', result.message);
         await ctx.reply(result.message, { parse_mode: 'HTML' });
       } else if (result.type === 'availability_check') {
-        console.log('[DEBUG] Availability check:', result.availableSlots?.length);
         await showAvailabilityResults(ctx, result.availableSlots, result.message);
       } else if (result.type === 'ai_response' || result.type === 'general_help' || 
                  result.type === 'greeting' || result.type === 'pricing_info' || 
@@ -353,7 +348,6 @@ const handleBookingRequest = async (ctx, message, student) => {
                  result.type === 'error_recovery' || result.type === 'discount_info' ||
                  result.type === 'explanation' || result.type === 'appreciation') {
         // Handle all types of helpful responses from scheduler service
-        console.log('[DEBUG] Sending structured response:', result.type);
         await ctx.reply(result.message, { 
           parse_mode: 'HTML',
           reply_markup: Markup.inlineKeyboard([
@@ -366,7 +360,6 @@ const handleBookingRequest = async (ctx, message, student) => {
         ctx.session.step = null;
       } else {
         // Handle unexpected success types
-        console.log('[DEBUG] Unexpected success type:', result.type);
         await ctx.reply(result.message || '✅ בקשתך עובדה בהצלחה!', { 
           parse_mode: 'HTML',
           reply_markup: Markup.inlineKeyboard([
@@ -376,7 +369,6 @@ const handleBookingRequest = async (ctx, message, student) => {
         });
       }
     } else if (result) {
-      console.log('[DEBUG] Non-success result:', result.type, result.success);
       if (result.type === 'no_slots_waitlist_offered') {
         await showWaitlistOptions(ctx, result.alternativeSlots, aiResult);
       } else if (result.needsMoreInfo) {
@@ -399,7 +391,6 @@ const handleBookingRequest = async (ctx, message, student) => {
       }
     } else {
       // No result returned - fallback
-      console.log('[DEBUG] No result returned from scheduler service');
       await ctx.reply('🔄 מעבד את הבקשה... אנא המתן רגע.', { 
         parse_mode: 'HTML',
         reply_markup: Markup.inlineKeyboard([
