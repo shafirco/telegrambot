@@ -68,22 +68,22 @@ async function healthCheck(url = 'http://localhost:3000/health') {
 }
 
 async function main() {
-    console.log('🔍 Running validation and health check...');
-    
     // Load environment variables
     require('dotenv').config();
     
-    // Validate environment
-    const envValid = validateEnvironment();
-    
-    // If URL provided as argument, do health check
+    // If URL provided as argument, do external health check (skip validation)
     const url = process.argv[2];
     if (url) {
-        console.log(`🌐 Checking health at: ${url}`);
+        console.log('🌐 Running external health check...');
+        console.log(`Health check URL: ${url}`);
         const healthValid = await healthCheck(url);
-        process.exit(envValid && healthValid ? 0 : 1);
+        process.exit(healthValid ? 0 : 1);
     } else {
-        // Just validation
+        // Local validation and health check
+        console.log('🔍 Running local validation and health check...');
+        
+        // Validate environment
+        const envValid = validateEnvironment();
         process.exit(envValid ? 0 : 1);
     }
 }
