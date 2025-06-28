@@ -86,12 +86,28 @@ async function handle(ctx) {
         await handleContactTeacher(ctx, student);
         break;
         
+      case 'reschedule_lesson':
+        await handleRescheduleLesson(ctx, student);
+        break;
+        
+      case 'cancel_lesson':
+        await handleCancelLessonMenu(ctx, student);
+        break;
+        
+      case 'update_personal_details':
+        await handleUpdatePersonalDetails(ctx, student);
+        break;
+        
       default:
         // Handle complex callback data (with parameters)
         if (callbackData.startsWith('book_slot_')) {
           await handleBookSlot(ctx, callbackData, student);
         } else if (callbackData.startsWith('cancel_lesson_')) {
           await handleCancelLesson(ctx, callbackData, student);
+        } else if (callbackData.startsWith('confirm_cancel_')) {
+          await handleConfirmCancel(ctx, callbackData, student);
+        } else if (callbackData.startsWith('reschedule_lesson_')) {
+          await handleRescheduleSpecificLesson(ctx, callbackData, student);
         } else if (callbackData.startsWith('confirm_')) {
           await handleConfirm(ctx, callbackData, student);
         } else if (callbackData.startsWith('waitlist_day_')) {
@@ -102,6 +118,8 @@ async function handle(ctx) {
           await handleSelectDay(ctx, callbackData, student);
         } else if (callbackData.startsWith('select_time_')) {
           await handleSelectTime(ctx, callbackData, student);
+        } else if (callbackData.startsWith('update_detail_')) {
+          await handleUpdateDetailField(ctx, callbackData, student);
         } else {
           logger.warn('Unknown callback data:', callbackData);
           await ctx.reply('❓ פעולה לא מוכרת. אנא נסה שוב.');
@@ -814,7 +832,7 @@ async function handleUpdateProfile(ctx, student) {
  */
 async function handleContactTeacher(ctx, student) {
   await ctx.editMessageText(
-    `📞 <b>יצירת קשר עם המורה</b>\n\n👨‍🏫 שפיר - מורה למתמטיקה\n\n📧 אימייל: [לא נמסר]\n📱 טלפון: [לא נמסר]\n💬 ניתן גם לכתוב כאן בצ'אט הישיר!\n\nאשמח לעזור בכל שאלה! 😊\n\nבברכה,\nשפיר.`,
+    `📞 <b>יצירת קשר עם המורה</b>\n\n👨‍🏫 שפיר - מורה למתמטיקה\n\n📧 <b>אימייל:</b> shafshaf6@gmail.com\n📱 <b>טלפון:</b> 0544271232\n💬 ניתן גם לכתוב כאן בצ'אט הישיר!\n\nאשמח לעזור בכל שאלה! 😊\n\nבברכה,\nשפיר.`,
     {
       parse_mode: 'HTML',
       reply_markup: Markup.inlineKeyboard([
@@ -1147,6 +1165,291 @@ const handleStudentDetailsUpdate = async (ctx, action) => {
     await ctx.answerCbQuery('❌ שגיאה בעדכון הפרטים');
   }
 };
+
+/**
+ * Handle reschedule lesson menu
+ */
+async function handleRescheduleLesson(ctx, student) {
+  try {
+    const lessons = await Lesson.findAll({
+      where: {
+        student_id: student.id,
+        status: ['scheduled', 'confirmed'],
+        start_time: {
+          [Op.gte]: new Date()
+        }
+      },
+      order: [['start_time', 'ASC']],
+      limit: 10
+    });
+
+    if (lessons.length === 0) {
+      await ctx.reply('📅 אין לך שיעורים מתוכננים להחלפה.', {
+        reply_markup: Markup.inlineKeyboard([
+          [Markup.button.callback('🔙 חזרה לתפריט הראשי', 'back_to_menu')]
+        ]).reply_markup
+      });
+      return;
+    }
+
+    let message = '🔄 <b>החלפת שיעור</b>\n\nבחר את השיעור שברצונך להחליף:\n\n';
+    const keyboard = [];
+
+    lessons.forEach(lesson => {
+      const startTime = moment(lesson.start_time).tz(student.timezone || 'Asia/Jerusalem');
+      const dateStr = startTime.format('DD/MM/YYYY');
+      const timeStr = startTime.format('HH:mm');
+      
+      message += `📚 ${dateStr} בשעה ${timeStr}\n`;
+      keyboard.push([
+        Markup.button.callback(
+          `${dateStr} ${timeStr}`, 
+          `reschedule_lesson_${lesson.id}`
+        )
+      ]);
+    });
+
+    keyboard.push([Markup.button.callback('🔙 חזרה לתפריט הראשי', 'back_to_menu')]);
+
+    await ctx.reply(message, {
+      parse_mode: 'HTML',
+      reply_markup: Markup.inlineKeyboard(keyboard).reply_markup
+    });
+
+  } catch (error) {
+    logger.error('Error in handleRescheduleLesson:', error);
+    await ctx.reply('❌ אירעה שגיאה בטעינת השיעורים. אנא נסה שוב.');
+  }
+}
+
+/**
+ * Handle cancel lesson menu
+ */
+async function handleCancelLessonMenu(ctx, student) {
+  try {
+    const lessons = await Lesson.findAll({
+      where: {
+        student_id: student.id,
+        status: ['scheduled', 'confirmed'],
+        start_time: {
+          [Op.gte]: new Date()
+        }
+      },
+      order: [['start_time', 'ASC']],
+      limit: 10
+    });
+
+    if (lessons.length === 0) {
+      await ctx.reply('📅 אין לך שיעורים מתוכננים לביטול.', {
+        reply_markup: Markup.inlineKeyboard([
+          [Markup.button.callback('🔙 חזרה לתפריט הראשי', 'back_to_menu')]
+        ]).reply_markup
+      });
+      return;
+    }
+
+    let message = '❌ <b>ביטול שיעור</b>\n\nבחר את השיעור שברצונך לבטל:\n\n';
+    const keyboard = [];
+
+    lessons.forEach(lesson => {
+      const startTime = moment(lesson.start_time).tz(student.timezone || 'Asia/Jerusalem');
+      const dateStr = startTime.format('DD/MM/YYYY');
+      const timeStr = startTime.format('HH:mm');
+      
+      // Check if lesson is within 24 hours
+      const hoursUntilLesson = startTime.diff(moment(), 'hours');
+      const warningText = hoursUntilLesson < 24 ? ' ⚠️' : '';
+      
+      message += `📚 ${dateStr} בשעה ${timeStr}${warningText}\n`;
+      keyboard.push([
+        Markup.button.callback(
+          `${dateStr} ${timeStr}${warningText}`, 
+          `confirm_cancel_${lesson.id}`
+        )
+      ]);
+    });
+
+    message += '\n⚠️ <b>שים לב:</b> ביטול שיעור פחות מ-24 שעות מראש יחויב בתשלום של 50% מעלות השיעור.';
+
+    keyboard.push([Markup.button.callback('🔙 חזרה לתפריט הראשי', 'back_to_menu')]);
+
+    await ctx.reply(message, {
+      parse_mode: 'HTML',
+      reply_markup: Markup.inlineKeyboard(keyboard).reply_markup
+    });
+
+  } catch (error) {
+    logger.error('Error in handleCancelLessonMenu:', error);
+    await ctx.reply('❌ אירעה שגיאה בטעינת השיעורים. אנא נסה שוב.');
+  }
+}
+
+/**
+ * Handle update personal details
+ */
+async function handleUpdatePersonalDetails(ctx, student) {
+  const currentDetails = `
+👤 <b>הפרטים האישיים שלך</b>
+
+📝 <b>שם מלא:</b> ${student.full_name || 'לא הוגדר'}
+📧 <b>אימייל:</b> ${student.email || 'לא הוגדר'}
+📱 <b>טלפון:</b> ${student.phone_number || 'לא הוגדר'}
+👨‍👩‍👧‍👦 <b>שם הורה:</b> ${student.parent_name || 'לא הוגדר'}
+📞 <b>טלפון הורה:</b> ${student.parent_phone || 'לא הוגדר'}
+📮 <b>אימייל הורה:</b> ${student.parent_email || 'לא הוגדר'}
+
+איזה פרט תרצה לעדכן?
+  `;
+
+  await ctx.reply(currentDetails, {
+    parse_mode: 'HTML',
+    reply_markup: Markup.inlineKeyboard([
+      [Markup.button.callback('📝 שם מלא', 'update_detail_name')],
+      [Markup.button.callback('📧 אימייל', 'update_detail_email')],
+      [Markup.button.callback('📱 טלפון', 'update_detail_phone')],
+      [Markup.button.callback('👨‍👩‍👧‍👦 שם הורה', 'update_detail_parent_name')],
+      [Markup.button.callback('📞 טלפון הורה', 'update_detail_parent_phone')],
+      [Markup.button.callback('📮 אימייל הורה', 'update_detail_parent_email')],
+      [Markup.button.callback('🔙 חזרה לתפריט הראשי', 'back_to_menu')]
+    ]).reply_markup
+  });
+}
+
+/**
+ * Handle reschedule specific lesson
+ */
+async function handleRescheduleSpecificLesson(ctx, callbackData, student) {
+  try {
+    const lessonId = callbackData.split('_')[2];
+    const lesson = await Lesson.findByPk(lessonId);
+
+    if (!lesson || lesson.student_id !== student.id) {
+      await ctx.reply('❌ השיעור לא נמצא או שאינו שייך לך.');
+      return;
+    }
+
+    const startTime = moment(lesson.start_time).tz(student.timezone || 'Asia/Jerusalem');
+    const dateStr = startTime.format('DD/MM/YYYY');
+    const timeStr = startTime.format('HH:mm');
+
+    await ctx.reply(
+      `🔄 <b>החלפת שיעור</b>\n\nאתה מחליף את השיעור שמתוכנן ל-${dateStr} בשעה ${timeStr}\n\nאנא ספר לי מתי תרצה לתאם את השיעור החדש במקום. אתה יכול לומר דברים כמו:\n\n• "אני רוצה להחליף לשיעור מחר בשעה 3 אחר הצהריים"\n• "אני פנוי ביום שלישי הבא אחר הצהריים"\n• "תתאם לי משהו ביום שישי אחרי 4"\n\nפשוט כתוב את הזמן החדש באופן טבעי! 🕐`,
+      { 
+        parse_mode: 'HTML',
+        reply_markup: Markup.inlineKeyboard([
+          [Markup.button.callback('🔙 חזרה לתפריט הראשי', 'back_to_menu')]
+        ]).reply_markup
+      }
+    );
+
+    ctx.session.step = 'booking_request';
+    ctx.session.reschedule_lesson_id = lessonId;
+
+  } catch (error) {
+    logger.error('Error in handleRescheduleSpecificLesson:', error);
+    await ctx.reply('❌ אירעה שגיאה. אנא נסה שוב.');
+  }
+}
+
+/**
+ * Handle confirm cancel lesson
+ */
+async function handleConfirmCancel(ctx, callbackData, student) {
+  try {
+    const lessonId = callbackData.split('_')[2];
+    const lesson = await Lesson.findByPk(lessonId);
+
+    if (!lesson || lesson.student_id !== student.id) {
+      await ctx.reply('❌ השיעור לא נמצא או שאינו שייך לך.');
+      return;
+    }
+
+    const startTime = moment(lesson.start_time).tz(student.timezone || 'Asia/Jerusalem');
+    const hoursUntilLesson = startTime.diff(moment(), 'hours');
+    const isLateCancel = hoursUntilLesson < 24;
+    const cancellationFee = isLateCancel ? 50 : 0; // 50% fee for late cancellation
+
+    // Cancel the lesson
+    await lesson.update({
+      status: 'cancelled',
+      cancelled_at: new Date(),
+      cancelled_by: 'student',
+      cancellation_reason: isLateCancel ? 'Late cancellation with fee' : 'Standard cancellation'
+    });
+
+    // Cancel in Google Calendar if sync is enabled
+    if (lesson.google_calendar_event_id) {
+      try {
+        const calendarService = require('../../services/calendar');
+        await calendarService.deleteEvent(lesson.google_calendar_event_id);
+        logger.info(`Cancelled lesson ${lessonId} in Google Calendar`);
+      } catch (calendarError) {
+        logger.error('Error cancelling lesson in Google Calendar:', calendarError);
+      }
+    }
+
+    let message = `✅ <b>השיעור בוטל בהצלחה</b>\n\n`;
+    message += `📅 תאריך: ${startTime.format('DD/MM/YYYY')}\n`;
+    message += `⏰ שעה: ${startTime.format('HH:mm')}\n\n`;
+
+    if (isLateCancel) {
+      message += `💰 <b>חיוב ביטול:</b> ${cancellationFee}% מעלות השיעור\n`;
+      message += `ℹ️ הביטול התבצע פחות מ-24 שעות מראש, לכן חל חיוב של 50% מעלות השיעור.\n\n`;
+      message += `החיוב יתווסף לחשבון הבא שלך.`;
+    } else {
+      message += `✅ הביטול התבצע ללא חיוב.`;
+    }
+
+    await ctx.reply(message, {
+      parse_mode: 'HTML',
+      reply_markup: Markup.inlineKeyboard([
+        [Markup.button.callback('🔙 חזרה לתפריט הראשי', 'back_to_menu')]
+      ]).reply_markup
+    });
+
+    // Log the cancellation
+    logger.info(`Lesson ${lessonId} cancelled by student ${student.id}`, {
+      lessonId,
+      studentId: student.id,
+      hoursUntilLesson,
+      isLateCancel,
+      cancellationFee
+    });
+
+  } catch (error) {
+    logger.error('Error in handleConfirmCancel:', error);
+    await ctx.reply('❌ אירעה שגיאה בביטול השיעור. אנא נסה שוב.');
+  }
+}
+
+/**
+ * Handle update detail field
+ */
+async function handleUpdateDetailField(ctx, callbackData, student) {
+  const field = callbackData.split('_')[2];
+  const fieldNames = {
+    name: 'שם מלא',
+    email: 'אימייל',
+    phone: 'טלפון',
+    parent_name: 'שם הורה',
+    parent_phone: 'טלפון הורה',
+    parent_email: 'אימייל הורה'
+  };
+
+  const fieldName = fieldNames[field];
+  
+  await ctx.reply(
+    `✏️ <b>עדכון ${fieldName}</b>\n\nאנא שלח את ${fieldName} החדש:`,
+    { 
+      parse_mode: 'HTML',
+      reply_markup: Markup.inlineKeyboard([
+        [Markup.button.callback('❌ ביטול', 'update_personal_details')]
+      ]).reply_markup
+    }
+  );
+
+  ctx.session.step = `updating_${field}`;
+}
 
 module.exports = {
   handle,

@@ -281,7 +281,22 @@ class CalendarService {
       const futureDate = new Date();
       futureDate.setDate(now.getDate() + 30); // Next 30 days
 
-      const events = await this.listEvents(now, futureDate);
+      // Get events including deleted ones to detect cancellations
+      const response = await this.calendar.events.list({
+        calendarId: process.env.GOOGLE_CALENDAR_ID || 'primary',
+        timeMin: now.toISOString(),
+        timeMax: futureDate.toISOString(),
+        singleEvents: true,
+        orderBy: 'startTime',
+        showDeleted: true  // Include cancelled events
+      });
+
+      const events = response.data.items || [];
+
+      // Process events and sync with database
+      for (const event of events) {
+        await this.processCalendarEvent(event);
+      }
       
       logger.calendarLog('calendar_synced', {
         eventCount: events.length,
@@ -293,6 +308,145 @@ class CalendarService {
     } catch (error) {
       logger.error('Error syncing calendar events:', error);
       throw error;
+    }
+  }
+
+  async processCalendarEvent(event) {
+    try {
+      const { Lesson } = require('../models');
+      
+      // Find lesson by Google Calendar event ID
+      const lesson = await Lesson.findOne({
+        where: { google_calendar_event_id: event.id }
+      });
+
+      if (!lesson) {
+        // This might be a new event created directly in calendar
+        // or an event not related to our lessons
+        return;
+      }
+
+      // Check if event was cancelled in Google Calendar
+      if (event.status === 'cancelled') {
+        await this.handleEventCancellation(lesson, event);
+      }
+      
+      // Check if event was updated (time changed, etc.)
+      else if (event.status === 'confirmed' && event.updated) {
+        await this.handleEventUpdate(lesson, event);
+      }
+
+    } catch (error) {
+      logger.error('Error processing calendar event:', error);
+    }
+  }
+
+  async handleEventCancellation(lesson, event) {
+    try {
+      const { Student } = require('../models');
+
+      // Only update if lesson is not already cancelled
+      if (lesson.status !== 'cancelled') {
+        // Update lesson status to cancelled
+        await lesson.update({
+          status: 'cancelled',
+          cancelled_at: new Date(),
+          cancelled_by: 'teacher',
+          cancellation_reason: 'Cancelled by teacher in Google Calendar'
+        });
+
+        // Notify student about cancellation
+        const student = await Student.findByPk(lesson.student_id);
+        if (student) {
+          await this.notifyStudentOfCancellation(student, lesson);
+        }
+
+        logger.calendarLog('lesson_cancelled_by_teacher', {
+          lessonId: lesson.id,
+          studentId: lesson.student_id,
+          eventId: event.id
+        });
+      }
+
+    } catch (error) {
+      logger.error('Error handling event cancellation:', error);
+    }
+  }
+
+  async handleEventUpdate(lesson, event) {
+    try {
+      // Check if the event time was changed
+      const newStartTime = new Date(event.start.dateTime);
+      const newEndTime = new Date(event.end.dateTime);
+      
+      if (lesson.start_time.getTime() !== newStartTime.getTime()) {
+        // Store old time for notification
+        const oldStartTime = lesson.start_time;
+        
+        // Time was changed
+        await lesson.update({
+          start_time: newStartTime,
+          end_time: newEndTime
+        });
+
+        // Notify student about time change
+        const { Student } = require('../models');
+        const student = await Student.findByPk(lesson.student_id);
+        if (student) {
+          await this.notifyStudentOfTimeChange(student, lesson, oldStartTime, newStartTime);
+        }
+
+        logger.calendarLog('lesson_time_changed', {
+          lessonId: lesson.id,
+          studentId: lesson.student_id,
+          oldStartTime: oldStartTime.toISOString(),
+          newStartTime: newStartTime.toISOString()
+        });
+      }
+
+    } catch (error) {
+      logger.error('Error handling event update:', error);
+    }
+  }
+
+  async notifyStudentOfCancellation(student, lesson) {
+    try {
+      const moment = require('moment-timezone');
+      const startTime = moment(lesson.start_time).tz(student.timezone || 'Asia/Jerusalem');
+      
+      const message = `❌ <b>ביטול שיעור</b>\n\nהשיעור שתוכנן ל-${startTime.format('DD/MM/YYYY')} בשעה ${startTime.format('HH:mm')} בוטל על ידי המורה.\n\nאנא צור קשר לתיאום שיעור חלופי או כתוב לי כאן לתיאום זמן חדש!`;
+
+      // Store notification for later sending
+      // We'll implement actual notification sending in the notification service
+      logger.info(`Lesson cancellation notification prepared for student ${student.id}`, {
+        lessonId: lesson.id,
+        studentTelegramId: student.telegram_id,
+        message: message.substring(0, 100) + '...'
+      });
+
+    } catch (error) {
+      logger.error('Error notifying student of cancellation:', error);
+    }
+  }
+
+  async notifyStudentOfTimeChange(student, lesson, oldStartTime, newStartTime) {
+    try {
+      const moment = require('moment-timezone');
+      const oldTime = moment(oldStartTime).tz(student.timezone || 'Asia/Jerusalem');
+      const newTime = moment(newStartTime).tz(student.timezone || 'Asia/Jerusalem');
+      
+      const message = `🔄 <b>שינוי זמן שיעור</b>\n\nהשיעור עודכן:\n\n⏰ זמן קודם: ${oldTime.format('DD/MM/YYYY')} בשעה ${oldTime.format('HH:mm')}\n✅ זמן חדש: ${newTime.format('DD/MM/YYYY')} בשעה ${newTime.format('HH:mm')}\n\nאשמח לשמוע ממך אישור שהזמן החדש מתאים לך!`;
+
+      // Store notification for later sending
+      logger.info(`Lesson time change notification prepared for student ${student.id}`, {
+        lessonId: lesson.id,
+        studentTelegramId: student.telegram_id,
+        oldTime: oldTime.format(),
+        newTime: newTime.format()
+      });
+
+    } catch (error) {
+      logger.error('Error notifying student of time change:', error);
     }
   }
 

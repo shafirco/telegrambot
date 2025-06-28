@@ -180,6 +180,18 @@ const handleText = async (ctx) => {
       case 'updating_address':
         await handleDetailsUpdate(ctx, message, student, 'address');
         break;
+
+      case 'updating_parent_name':
+        await handleDetailsUpdate(ctx, message, student, 'parent_name');
+        break;
+
+      case 'updating_parent_phone':
+        await handleDetailsUpdate(ctx, message, student, 'parent_phone');
+        break;
+
+      case 'updating_parent_email':
+        await handleDetailsUpdate(ctx, message, student, 'parent_email');
+        break;
       
       default:
         // General natural language processing with AI
@@ -391,111 +403,191 @@ const showAvailabilityResults = async (ctx, slots, aiMessage) => {
 
 const handleGeneralMessage = async (ctx, message, student) => {
   try {
-    // Use AI to understand intent
-    const aiResult = await aiScheduler.processSchedulingRequest(message, {
-      id: student.id,
-      name: student.getDisplayName(),
-      timezone: student.timezone || 'Asia/Jerusalem'
-    });
-
-    logger.aiLog('general_message_processed', message, JSON.stringify(aiResult), {
-      intent: aiResult.intent,
-      confidence: aiResult.confidence
-    });
-
-    // Route based on AI understanding
-    switch (aiResult.intent) {
-      case 'book_lesson':
-        if (aiResult.confidence > 0.7) {
-          ctx.session.step = 'booking_request';
-          await handleBookingRequest(ctx, message, student);
-        } else {
-          await ctx.reply(
-            '🤔 נראה שאתה רוצה לתאם שיעור, אבל לא הבנתי בדיוק מתי.\n\nאתה יכול לומר:\n• "אני רוצה שיעור מחר בשעה 3"\n• "מתי יש זמנים פנויים השבוע?"\n• "תתאם לי שיעור ביום ראשון"',
-            {
-              reply_markup: Markup.inlineKeyboard([
-                [Markup.button.callback('📅 הצג זמנים זמינים', 'show_available_times')]
-              ]).reply_markup
-            }
-          );
+    // Enhanced keyword detection for better understanding
+    const lowerMessage = message.toLowerCase();
+    
+    // Check for greeting or basic questions
+    if (lowerMessage.includes('שלום') || lowerMessage.includes('היי') || lowerMessage.includes('מה שלומך')) {
+      await ctx.reply(
+        `היי ${student.getDisplayName()}! 👋\n\nאשמח לעזור לך עם תיאום שיעורי מתמטיקה!\n\n💡 <b>מה אני יכול לעשות עבורך:</b>\n• 📚 לתאם שיעור חדש\n• 📅 לבדוק את השיעורים שלך\n• 🔄 לשנות או לבטל שיעור\n• ⏰ להוסיף אותך לרשימת המתנה\n• ⚙️ לעדכן את הפרטים שלך`,
+        {
+          parse_mode: 'HTML',
+          reply_markup: Markup.inlineKeyboard([
+            [Markup.button.callback('📚 תאם שיעור', 'book_lesson')],
+            [Markup.button.callback('📅 השיעורים שלי', 'my_schedule')],
+            [Markup.button.callback('❓ עזרה מלאה', 'help')]
+          ]).reply_markup
         }
-        break;
+      );
+      return;
+    }
 
-      case 'check_availability':
-        const result = await schedulerService.processBookingRequest(message, student, { aiResult });
-        if (result.success && result.type === 'availability_check') {
-          await showAvailabilityResults(ctx, result.availableSlots, result.message);
-        } else {
-          await ctx.reply('בוא נבדוק מה יש פנוי!', {
-            reply_markup: Markup.inlineKeyboard([
-              [Markup.button.callback('📅 הצג זמנים זמינים', 'show_available_times')]
-            ]).reply_markup
-          });
-        }
-        break;
+    // Enhanced intent detection with keywords
+    const intents = {
+      booking: ['תאם', 'שיעור', 'לקבוע', 'פנוי', 'זמינ', 'רוצה שיעור', 'אפשר לתאם', 'מחר', 'השבוע', 'בוא נקבע'],
+      schedule: ['לוח', 'שיעורים שלי', 'מתוכנן', 'קרוב', 'הבא', 'מה יש לי'],
+      cancel: ['לבטל', 'ביטול', 'לא יכול', 'לא אגיע', 'לבטל שיעור'],
+      reschedule: ['לשנות', 'להעביר', 'זמן אחר', 'לדחות', 'החלפה'],
+      availability: ['זמנים פנויים', 'מה פנוי', 'איזה זמנים', 'מתי יש', 'כשיש מקום'],
+      waitlist: ['רשימת המתנה', 'להמתין', 'כשיתפנה', 'אם יבטלו'],
+      contact: ['פרטי המורה', 'טלפון', 'אימייל', 'איך ליצור קשר', 'פרטים'],
+      help: ['עזרה', 'לא מבין', 'איך', 'מה אפשר', 'הוראות', 'מבולבל']
+    };
 
-      case 'cancel_lesson':
-        await ctx.reply(
-          '🗓️ איזה שיעור אתה רוצה לבטל?\n\nאתה יכול לבדוק את השיעורים הקרובים שלך ולבחור איזה לבטל.',
-          {
-            reply_markup: Markup.inlineKeyboard([
-              [Markup.button.callback('📅 הצג את השיעורים שלי', 'my_schedule')]
-            ]).reply_markup
+    let detectedIntent = null;
+    let maxMatches = 0;
+
+    // Find the intent with the most keyword matches
+    for (const [intent, keywords] of Object.entries(intents)) {
+      const matches = keywords.filter(keyword => lowerMessage.includes(keyword)).length;
+      if (matches > maxMatches) {
+        maxMatches = matches;
+        detectedIntent = intent;
+      }
+    }
+
+    // If we have a clear intent based on keywords
+    if (maxMatches > 0) {
+      switch (detectedIntent) {
+        case 'booking':
+          // Check if specific time mentioned
+          if (lowerMessage.includes('מחר') || lowerMessage.includes('אחרי') || /\d/.test(lowerMessage)) {
+            ctx.session.step = 'booking_request';
+            await handleBookingRequest(ctx, message, student);
+          } else {
+            await ctx.reply(
+              '📚 <b>תיאום שיעור</b>\n\nמעולה! בואו נתאם לך שיעור מתמטיקה.\n\n💡 <b>דוגמאות למה שאתה יכול לכתוב:</b>\n• "אני רוצה שיעור מחר בשעה 4"\n• "אני פנוי ביום שלישי אחר הצהריים"\n• "תתאם לי משהו השבוע הבא"\n• "איזה זמנים פנויים יש השבוע?"\n\nפשוט ספר לי מתי אתה פנוי! 🕐',
+              {
+                parse_mode: 'HTML',
+                reply_markup: Markup.inlineKeyboard([
+                  [Markup.button.callback('📅 הצג זמנים זמינים', 'show_available_times')],
+                  [Markup.button.callback('❓ דוגמאות נוספות', 'help')]
+                ]).reply_markup
+              }
+            );
+            ctx.session.step = 'booking_request';
           }
-        );
-        break;
+          break;
 
-      case 'reschedule_lesson':
-        await ctx.reply(
-          '🔄 איזה שיעור אתה רוצה לשנות?\n\nבחר שיעור מהרשימה והגד לי לאיזה זמן חדש אתה רוצה להעביר אותו.',
-          {
+        case 'schedule':
+          await ctx.reply('📅 בואו נבדוק את השיעורים שלך!', {
             reply_markup: Markup.inlineKeyboard([
-              [Markup.button.callback('📅 הצג את השיעורים שלי', 'my_schedule')]
-            ]).reply_markup
-          }
-        );
-        break;
-
-      case 'join_waitlist':
-        ctx.session.step = 'waitlist_request';
-        await ctx.reply(
-          '⏰ <b>הצטרפות לרשימת המתנה</b>\n\nספר לי איזה זמנים אתה מעדיף ואני אוסיף אותך לרשימת המתנה!\n\nדוגמה: "אני רוצה להיות ברשימת המתנה לימי שני אחר הצהריים"',
-          { parse_mode: 'HTML' }
-        );
-        break;
-
-      default:
-        // Low confidence or "other" intent
-        if (aiResult.confidence < 0.5) {
-          await ctx.reply(
-            '🤔 לא הבנתי בדיוק מה אתה רוצה לעשות.\n\nאתה יכול:\n• לתאם שיעור חדש\n• לבדוק את השיעורים שלך\n• לבטל או לשנות שיעור קיים\n• להצטרף לרשימת המתנה\n\nמה תרצה לעשות?',
-            {
-              reply_markup: Markup.inlineKeyboard([
-                [Markup.button.callback('📚 תאם שיעור', 'book_lesson')],
-                [Markup.button.callback('📅 השיעורים שלי', 'my_schedule')],
-                [Markup.button.callback('❓ עזרה', 'help')]
-              ]).reply_markup
-            }
-          );
-        } else {
-          // Use AI generated response if available
-          const responseMessage = aiResult.suggested_responses?.[0] || 
-            'תודה על ההודעה! איך אני יכול לעזור לך עם תיאום השיעורים?';
-          
-          await ctx.reply(responseMessage, {
-            reply_markup: Markup.inlineKeyboard([
-              [Markup.button.callback('📚 תאם שיעור', 'book_lesson')],
               [Markup.button.callback('📅 השיעורים שלי', 'my_schedule')]
             ]).reply_markup
           });
+          break;
+
+        case 'cancel':
+          await ctx.reply(
+            '❌ <b>ביטול שיעור</b>\n\nאתה רוצה לבטל שיעור? בחר את השיעור מהרשימה:\n\n⚠️ <b>שים לב:</b> ביטול פחות מ-24 שעות מראש יחויב בתשלום 50%',
+            {
+              parse_mode: 'HTML',
+              reply_markup: Markup.inlineKeyboard([
+                [Markup.button.callback('❌ בטל שיעור', 'cancel_lesson')],
+                [Markup.button.callback('📅 הצג שיעורים', 'my_schedule')]
+              ]).reply_markup
+            }
+          );
+          break;
+
+        case 'reschedule':
+          await ctx.reply(
+            '🔄 <b>החלפת שיעור</b>\n\nאתה רוצה לשנות זמן של שיעור קיים? בחר את השיעור מהרשימה:',
+            {
+              parse_mode: 'HTML',
+              reply_markup: Markup.inlineKeyboard([
+                [Markup.button.callback('🔄 החלף שיעור', 'reschedule_lesson')],
+                [Markup.button.callback('📅 הצג שיעורים', 'my_schedule')]
+              ]).reply_markup
+            }
+          );
+          break;
+
+        case 'availability':
+          await ctx.reply('📅 בואו נבדוק מה פנוי השבוע!', {
+            reply_markup: Markup.inlineKeyboard([
+              [Markup.button.callback('📅 זמנים זמינים', 'show_available_times')]
+            ]).reply_markup
+          });
+          break;
+
+        case 'waitlist':
+          await ctx.reply(
+            '⏰ <b>רשימת המתנה</b>\n\nאתה רוצה להיות ברשימת המתנה? ספר לי איזה זמנים מעניינים אותך.\n\nדוגמה: "אני רוצה להיות ברשימת המתנה לימי שני אחר הצהריים"',
+            {
+              parse_mode: 'HTML',
+              reply_markup: Markup.inlineKeyboard([
+                [Markup.button.callback('⏰ הצטרף לרשימת המתנה', 'join_waitlist')]
+              ]).reply_markup
+            }
+          );
+          ctx.session.step = 'waitlist_request';
+          break;
+
+        case 'contact':
+          await ctx.reply('📞 בואו נציג לך את פרטי המורה!', {
+            reply_markup: Markup.inlineKeyboard([
+              [Markup.button.callback('📞 פרטי המורה', 'contact_teacher')]
+            ]).reply_markup
+          });
+          break;
+
+        case 'help':
+          await ctx.reply('❓ בואו נעזור לך להבין איך הכל עובד!', {
+            reply_markup: Markup.inlineKeyboard([
+              [Markup.button.callback('❓ עזרה מלאה', 'help')]
+            ]).reply_markup
+          });
+          break;
+      }
+    } else {
+      // Try AI processing as fallback
+      try {
+        const aiResult = await aiScheduler.processSchedulingRequest(message, {
+          id: student.id,
+          name: student.getDisplayName(),
+          timezone: student.timezone || 'Asia/Jerusalem'
+        });
+
+        if (aiResult.intent === 'book_lesson' && aiResult.confidence > 0.6) {
+          ctx.session.step = 'booking_request';
+          await handleBookingRequest(ctx, message, student);
+        } else {
+          // Provide helpful default response
+          await ctx.reply(
+            `🤔 <b>לא הבנתי בדיוק מה אתה רוצה לעשות</b>\n\n💡 <b>אתה יכול:</b>\n• לתאם שיעור חדש\n• לבדוק את השיעורים שלך\n• לבטל או לשנות שיעור\n• להצטרף לרשימת המתנה\n• לעדכן פרטים אישיים\n\n📝 <b>דוגמאות למה שאתה יכול לכתוב:</b>\n• "אני רוצה שיעור מחר בשעה 3"\n• "מה השיעורים שלי השבוע?"\n• "אני רוצה לבטל שיעור"\n• "איזה זמנים פנויים יש?"`,
+            {
+              parse_mode: 'HTML',
+              reply_markup: Markup.inlineKeyboard([
+                [Markup.button.callback('📚 תאם שיעור', 'book_lesson')],
+                [Markup.button.callback('📅 השיעורים שלי', 'my_schedule')],
+                [Markup.button.callback('❓ עזרה מלאה', 'help')],
+                [Markup.button.callback('⚙️ הגדרות', 'settings')]
+              ]).reply_markup
+            }
+          );
         }
-        break;
+      } catch (aiError) {
+        logger.error('AI processing failed:', aiError);
+        // Fallback to default response
+        await ctx.reply(
+          '🤖 <b>אני כאן לעזור לך!</b>\n\nבחר מהתפריט למטה מה תרצה לעשות:',
+          {
+            parse_mode: 'HTML',
+            reply_markup: Markup.inlineKeyboard([
+              [Markup.button.callback('📚 תאם שיעור', 'book_lesson')],
+              [Markup.button.callback('📅 השיעורים שלי', 'my_schedule')],
+              [Markup.button.callback('❓ עזרה', 'help')]
+            ]).reply_markup
+          }
+        );
+      }
     }
 
   } catch (error) {
     logger.error('Error processing general message:', error);
     await ctx.reply(
-      'נתקלתי בקושי להבין את ההודעה. אתה יכול לנסח אותה שוב או להשתמש בתפריט:',
+      '😅 נתקלתי בקושי להבין את ההודעה. בואו ננסה שוב:',
       {
         reply_markup: Markup.inlineKeyboard([
           [Markup.button.callback('📚 תאם שיעור', 'book_lesson')],
@@ -815,11 +907,95 @@ async function handleStudentRegistration(ctx, student) {
   }
 }
 
+/**
+ * Handle updating personal details
+ */
+async function handleDetailsUpdate(ctx, message, student, field) {
+  try {
+    const value = message.trim();
+    
+    if (!value || value.length < 2) {
+      await ctx.reply('הערך שהוזן קצר מדי. אנא נסה שוב:');
+      return;
+    }
+
+    const fieldMapping = {
+      'name': 'full_name',
+      'phone': 'phone_number', 
+      'email': 'email',
+      'parent_name': 'parent_name',
+      'parent_phone': 'parent_phone',
+      'parent_email': 'parent_email'
+    };
+
+    const fieldNames = {
+      'name': 'שם מלא',
+      'phone': 'טלפון',
+      'email': 'אימייל',
+      'parent_name': 'שם הורה',
+      'parent_phone': 'טלפון הורה',
+      'parent_email': 'אימייל הורה'
+    };
+
+    const dbField = fieldMapping[field];
+    const fieldName = fieldNames[field];
+
+    if (!dbField) {
+      await ctx.reply('❌ שדה לא מוכר. אנא נסה שוב.');
+      return;
+    }
+
+    // Simple validation for email
+    if (field === 'email' || field === 'parent_email') {
+      if (!value.includes('@') || !value.includes('.')) {
+        await ctx.reply('❌ כתובת האימייל לא תקינה. אנא הזן כתובת אימייל תקינה:');
+        return;
+      }
+    }
+
+    // Simple validation for phone
+    if (field === 'phone' || field === 'parent_phone') {
+      const phoneRegex = /^[\d\s\-\+\(\)]{9,15}$/;
+      if (!phoneRegex.test(value)) {
+        await ctx.reply('❌ מספר הטלפון לא תקין. אנא הזן מספר טלפון תקין:');
+        return;
+      }
+    }
+
+    // Update the student record
+    await student.update({
+      [dbField]: value
+    });
+
+    await ctx.reply(
+      `✅ <b>${fieldName} עודכן בהצלחה!</b>\n\nהערך החדש: ${value}`,
+      { 
+        parse_mode: 'HTML',
+        reply_markup: Markup.inlineKeyboard([
+          [Markup.button.callback('✏️ עדכן פרט נוסף', 'update_personal_details')],
+          [Markup.button.callback('🔙 חזרה לתפריט הראשי', 'back_to_menu')]
+        ]).reply_markup
+      }
+    );
+
+    // Clear conversation state
+    ctx.session.step = null;
+
+    logger.info(`Student ${student.id} updated ${field} to: ${value}`);
+
+  } catch (error) {
+    logger.error('Error updating student details:', error);
+    await ctx.reply('❌ אירעה שגיאה בעדכון הפרטים. אנא נסה שוב.');
+    ctx.session.step = null;
+  }
+}
+
 module.exports = {
   handleText,
   handleContact,
   handleLocation,
   validateAndSanitizeInput,
   checkRateLimit,
-  handleStudentRegistration
+  handleStudentRegistration,
+  handleDetailsUpdate
 }; 

@@ -42,6 +42,10 @@ const start = async (ctx) => {
         Markup.button.callback('❓ עזרה', 'help')
       ],
       [
+        Markup.button.callback('🔄 החלף שיעור', 'reschedule_lesson'),
+        Markup.button.callback('❌ בטל שיעור', 'cancel_lesson')
+      ],
+      [
         Markup.button.callback('⚙️ הגדרות', 'settings'),
         Markup.button.callback('📊 סטטוס', 'my_status')
       ]
@@ -375,7 +379,7 @@ const settings = async (ctx) => {
   await ctx.reply(settingsText, {
     parse_mode: 'HTML',
     reply_markup: Markup.inlineKeyboard([
-      [Markup.button.callback('📝 עדכן פרטים', 'update_profile')],
+      [Markup.button.callback('📝 עדכן פרטים', 'update_personal_details')],
       [Markup.button.callback('🌐 שפה', 'set_language')],
       [Markup.button.callback('📞 צור קשר', 'contact_teacher')],
       [Markup.button.callback('✅ סיום', 'settings_done')]

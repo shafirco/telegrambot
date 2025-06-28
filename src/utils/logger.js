@@ -127,6 +127,15 @@ logger.calendarLog = (action, details, metadata = {}) => {
   });
 };
 
+// Add method for logging messages
+logger.messageLog = (action, details, metadata = {}) => {
+  logger.info(`Message ${action}`, {
+    ...details,
+    ...metadata,
+    type: 'message_event'
+  });
+};
+
 // Development logging helpers
 if (process.env.NODE_ENV === 'development') {
   logger.debug = (message, meta) => {

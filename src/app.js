@@ -203,7 +203,38 @@ class Application {
     // Start scheduler maintenance
     scheduleService.startMaintenance();
     
+    // Start calendar sync every 5 minutes
+    this.startCalendarSync();
+    
     logger.info('Background services started');
+  }
+
+  startCalendarSync() {
+    try {
+      // Initial sync
+      setImmediate(async () => {
+        try {
+          await calendarService.syncCalendarEvents();
+          logger.info('Initial calendar sync completed');
+        } catch (error) {
+          logger.error('Initial calendar sync failed:', error);
+        }
+      });
+
+      // Set up periodic sync every 5 minutes
+      this.calendarSyncInterval = setInterval(async () => {
+        try {
+          await calendarService.syncCalendarEvents();
+          logger.info('Periodic calendar sync completed');
+        } catch (error) {
+          logger.error('Periodic calendar sync failed:', error);
+        }
+      }, 5 * 60 * 1000); // 5 minutes
+
+      logger.info('Calendar sync service started (running every 5 minutes)');
+    } catch (error) {
+      logger.error('Failed to start calendar sync service:', error);
+    }
   }
 
   setupGracefulShutdown() {
@@ -220,6 +251,12 @@ class Application {
         // Stop background services
         notificationService.stop();
         scheduleService.stopMaintenance();
+        
+        // Stop calendar sync
+        if (this.calendarSyncInterval) {
+          clearInterval(this.calendarSyncInterval);
+          logger.info('Calendar sync service stopped');
+        }
         
         // Close database connection
         await database.close();
