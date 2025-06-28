@@ -431,7 +431,8 @@ class SchedulerService {
         startTime: slotDetails.start
       });
 
-      const slotTime = moment(slotDetails.start).tz(student.timezone || settings.teacher.timezone);
+      // CRITICAL: Use teacher timezone for consistency with display
+      const slotTime = moment(slotDetails.start).tz(settings.teacher.timezone);
       const dayName = this.getHebrewDayName(slotTime.day());
       const monthName = this.getHebrewMonthName(slotTime.month());
 

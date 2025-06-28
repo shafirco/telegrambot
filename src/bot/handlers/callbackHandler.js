@@ -554,7 +554,8 @@ async function handleBookSlot(ctx, callbackData, student) {
       );
       
       if (bookingResult.success) {
-        const slotTime = moment(selectedSlot.start).tz(student.timezone || settings.teacher.timezone);
+        // CRITICAL: Use teacher timezone for consistency with display
+        const slotTime = moment(selectedSlot.start).tz(settings.teacher.timezone);
         const dayName = schedulerService.constructor.getHebrewDayName(slotTime.day());
         const monthName = schedulerService.constructor.getHebrewMonthName(slotTime.month());
         

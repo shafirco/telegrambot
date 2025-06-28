@@ -403,29 +403,35 @@ class AIScheduler {
       { pattern: /(השבוע|השבוע הזה)/, offset: 2 }
     ];
 
-    // Enhanced time patterns including all variations of noon and times
+    // Enhanced time patterns - EXACT TIMES FIRST, then general patterns
     const timePatterns = [
+      // EXACT TIME PATTERNS FIRST (critical for parsing "15:00", "6:30" etc)
+      { pattern: /(\d{1,2}):(\d{2})/, timeFormat: true }, // HH:MM format - MUST BE FIRST
+      { pattern: /שעה (\d{1,2}):(\d{2})/, timeFormat: true }, // "שעה 15:00"
+      { pattern: /ב(\d{1,2}):(\d{2})/, timeFormat: true }, // "ב15:00"
+      
+      // GENERAL TIME PATTERNS
       { pattern: /(בצהריים|צהריים|בצהרים|צהרים|noon|בצהריים|צהריים|12|בשתיים עשרה)/, hour: 12 },
       { pattern: /(בבוקר|בוקר|morning)/, hour: 10 },
       { pattern: /(אחר הצהריים|אחרי הצהריים|אחה"צ|afternoon)/, hour: 15 },
       { pattern: /(בערב|ערב|evening)/, hour: 18 },
       { pattern: /(בלילה|לילה|night)/, hour: 20 },
-      { pattern: /שעה (\d+)/, match: 1, modifier: 'smart_default' },
-      { pattern: /ב(\d+)/, match: 1, modifier: 'smart_default' },
+      
+      // SPECIFIC HOUR WITH CONTEXT
       { pattern: /(\d+) בבוקר/, match: 1, modifier: 'morning' },
       { pattern: /(\d+) אחר הצהריים/, match: 1, modifier: 'afternoon' },
       { pattern: /(\d+) בערב/, match: 1, modifier: 'evening' },
-      { pattern: /(\d+):(\d+)/, timeFormat: true }, // HH:MM format
-      { pattern: /אחרי (\d+)/, match: 1, modifier: 'after' }, // אחרי 3 = after 3
-      { pattern: /לפני (\d+)/, match: 1, modifier: 'before' }, // לפני 4 = before 4
-      // Enhanced standalone number patterns - better flexibility
-      { pattern: /\b(\d{1,2})\b(?![:\.\d])/, match: 1, modifier: 'smart_default' }, // Standalone numbers like "5"
-      { pattern: /שעה\s*(\d{1,2})\b/, match: 1, modifier: 'smart_default' }, // "שעה 5"
-      { pattern: /ב-?(\d{1,2})\b/, match: 1, modifier: 'smart_default' }, // "ב-5" or "ב5"
       { pattern: /(\d+)\s*וחצי/, match: 1, modifier: 'half_hour' }, // "5 וחצי" = 5:30
       { pattern: /ברבע לפני (\d+)/, match: 1, modifier: 'quarter_before' }, // רבע לפני 5 = 4:45
       { pattern: /ברבע אחרי (\d+)/, match: 1, modifier: 'quarter_after' }, // רבע אחרי 5 = 5:15
-      { pattern: /וחצי אחרי (\d+)/, match: 1, modifier: 'half_after' } // חצי אחרי 5 = 5:30
+      { pattern: /וחצי אחרי (\d+)/, match: 1, modifier: 'half_after' }, // חצי אחרי 5 = 5:30
+      { pattern: /אחרי (\d+)/, match: 1, modifier: 'after' }, // אחרי 3 = after 3
+      { pattern: /לפני (\d+)/, match: 1, modifier: 'before' }, // לפני 4 = before 4
+      
+      // STANDALONE NUMBERS - THESE MUST BE LAST to avoid conflicts
+      { pattern: /שעה (\d{1,2})(?!:)/, match: 1, modifier: 'smart_default' }, // "שעה 5" (but not "שעה 5:00")
+      { pattern: /ב(\d{1,2})(?!:)/, match: 1, modifier: 'smart_default' }, // "ב5" (but not "ב5:00")
+      { pattern: /\b(\d{1,2})\b(?![:\.\d])/, match: 1, modifier: 'smart_default' } // Standalone numbers like "5"
     ];
 
     // Find day matches
