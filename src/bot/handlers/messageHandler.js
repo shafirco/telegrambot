@@ -672,7 +672,7 @@ const handleGeneralMessage = async (ctx, message, student) => {
       {
         reply_markup: Markup.inlineKeyboard([
           [Markup.button.callback('📚 תאם שיעור', 'book_lesson')],
-          [Markup.button.callback('📅 השיעורים שלי', 'my_schedule')],
+          [Markup.button.callback('📋 השיעורים שלי', 'my_lessons')],
           [Markup.button.callback('❓ עזרה', 'help')]
         ]).reply_markup
       }
