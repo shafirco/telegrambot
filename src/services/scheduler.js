@@ -136,97 +136,99 @@ class SchedulerService {
    * Find available time slots based on preferences
    */
   async findAvailableSlots(preference, durationMinutes = 60) {
+    logger.info(`Searching for slots on ${preference.date} from 10:00 to 17:00`);
+    
+    const availableSlots = [];
+    const startDate = moment(preference.date).startOf('day');
+    const endDate = startDate.clone().endOf('day');
+    const nowInTeacherTz = moment().tz(settings.teacher.timezone);
+
+    // Search for available time slots from 10:00 to 17:00
+    let currentSlot = startDate.clone().hour(10).minute(0).second(0);
+    const lastPossibleStart = startDate.clone().hour(17).minute(0).second(0).subtract(durationMinutes, 'minutes');
+
+    // Get Google Calendar events for this day to check for conflicts
+    let calendarEvents = [];
     try {
-      let searchDate, searchTime;
-
-      if (preference.datetime) {
-        const momentTime = moment(preference.datetime).tz(settings.teacher.timezone);
-        searchDate = momentTime.format('YYYY-MM-DD');
-        searchTime = momentTime.format('HH:mm');
-      } else if (preference.date) {
-        searchDate = preference.date;
-        searchTime = preference.time || '10:00';
-      } else {
-        // No specific date - search next available
-        return await this.findNextAvailableSlots(durationMinutes, 7); // Next 7 days
+      const calendarService = require('./calendar');
+      if (calendarService.isAvailable()) {
+        const dayStart = startDate.clone().hour(0).minute(0).toISOString();
+        const dayEnd = endDate.clone().hour(23).minute(59).toISOString();
+        const events = await calendarService.listEvents(dayStart, dayEnd);
+        calendarEvents = events.filter(event => 
+          event.start && event.start.dateTime && 
+          event.status !== 'cancelled' &&
+          (event.summary?.includes('מתמטיקה') || event.summary?.includes('Math'))
+        );
+        logger.info(`Found ${calendarEvents.length} calendar events for conflict checking`);
       }
+    } catch (error) {
+      logger.warn('Could not fetch calendar events for conflict checking:', error.message);
+    }
 
-      // Generate basic available slots for business hours
-      const availableSlots = [];
-      const searchMoment = moment.tz(searchDate, settings.teacher.timezone);
+    while (currentSlot.isSameOrBefore(lastPossibleStart)) {
+      const slotEnd = currentSlot.clone().add(durationMinutes, 'minutes');
       
-      // Skip if not a business day
-      if (!settings.isBusinessDay(searchMoment.toDate())) {
-        logger.info(`Skipping ${searchDate} - not a business day`);
-        return [];
-      }
-
-      // Create time slots every hour during business hours
-      const [startHour, startMinute] = settings.businessHours.start.split(':').map(Number);
-      const [endHour, endMinute] = settings.businessHours.end.split(':').map(Number);
-
-      let currentSlot = searchMoment.clone().set({ hour: startHour, minute: startMinute, second: 0, millisecond: 0 });
-      const endTime = searchMoment.clone().set({ hour: endHour, minute: endMinute, second: 0, millisecond: 0 });
-
-      // Ensure we're not looking too far into the end time
-      const lastPossibleStart = endTime.clone().subtract(durationMinutes, 'minutes');
+      // Check if this slot is in the future (at least 30 minutes from now)
+      const minutesUntilSlot = currentSlot.diff(nowInTeacherTz, 'minutes');
       
-      logger.info(`Searching for slots on ${searchDate} from ${currentSlot.format('HH:mm')} to ${lastPossibleStart.format('HH:mm')}`);
-
-      // Get current time in teacher's timezone
-      const nowInTeacherTz = moment().tz(settings.teacher.timezone);
-
-      while (currentSlot.isSameOrBefore(lastPossibleStart)) {
-        const slotEnd = currentSlot.clone().add(durationMinutes, 'minutes');
+      if (minutesUntilSlot >= 30) {
         
-        // Check if this slot is in the future (at least 30 minutes from now)
-        const minutesUntilSlot = currentSlot.diff(nowInTeacherTz, 'minutes');
+        // Check for conflicts with existing lessons in database
+        const hasDbConflict = await Lesson.hasConflict(currentSlot.toDate(), slotEnd.toDate());
         
-        if (minutesUntilSlot >= 30) {
-          
-          // Check for conflicts with existing lessons
-          const hasConflict = await Lesson.hasConflict(currentSlot.toDate(), slotEnd.toDate());
-          
-          if (!hasConflict) {
-            // Check teacher availability (manual blocks)
-            const isTeacherAvailable = await this.checkTeacherAvailability(currentSlot.toDate(), durationMinutes);
+        // Check for conflicts with Google Calendar events
+        let hasCalendarConflict = false;
+        if (calendarEvents.length > 0) {
+          hasCalendarConflict = calendarEvents.some(event => {
+            const eventStart = moment(event.start.dateTime);
+            const eventEnd = moment(event.end.dateTime);
             
-            if (isTeacherAvailable.available) {
-              const dayName = this.getHebrewDayName(currentSlot.day());
-              const monthName = this.getHebrewMonthName(currentSlot.month());
-              
-              availableSlots.push({
-                start: currentSlot.toDate(),
-                end: slotEnd.toDate(),
-                duration: durationMinutes,
-                date: currentSlot.format('YYYY-MM-DD'),
-                time: currentSlot.format('HH:mm'),
-                formattedTime: `${dayName}, ${currentSlot.date()} ב${monthName} בשעה ${currentSlot.format('HH:mm')}`,
-                pricePerHour: settings.lessons.defaultPrice || 180
-              });
-              
-              logger.info(`Added available slot: ${currentSlot.format('YYYY-MM-DD HH:mm')}`);
-            } else {
-              logger.info(`Teacher unavailable at: ${currentSlot.format('YYYY-MM-DD HH:mm')}`);
-            }
-          } else {
-            logger.info(`Conflict found at: ${currentSlot.format('YYYY-MM-DD HH:mm')}`);
-          }
-        } else {
-          logger.info(`Slot too soon (${minutesUntilSlot}m): ${currentSlot.format('YYYY-MM-DD HH:mm')}`);
+            // Check if the proposed slot overlaps with any calendar event
+            return (currentSlot.isBefore(eventEnd) && slotEnd.isAfter(eventStart));
+          });
         }
         
-        // Move to next hour slot (only whole hours)
-        currentSlot.add(60, 'minutes');
+        if (!hasDbConflict && !hasCalendarConflict) {
+          // Check teacher availability (manual blocks)
+          const isTeacherAvailable = await this.checkTeacherAvailability(currentSlot.toDate(), durationMinutes);
+          
+          if (isTeacherAvailable.available) {
+            const dayName = this.getHebrewDayName(currentSlot.day());
+            const monthName = this.getHebrewMonthName(currentSlot.month());
+            
+            availableSlots.push({
+              start: currentSlot.toDate(),
+              end: slotEnd.toDate(),
+              duration: durationMinutes,
+              date: currentSlot.format('YYYY-MM-DD'),
+              time: currentSlot.format('HH:mm'),
+              formattedTime: `${dayName}, ${currentSlot.date()} ב${monthName} בשעה ${currentSlot.format('HH:mm')}`,
+              pricePerHour: settings.lessons.defaultPrice || 180
+            });
+            
+            logger.info(`Added available slot: ${currentSlot.format('YYYY-MM-DD HH:mm')}`);
+          } else {
+            logger.info(`Teacher unavailable at: ${currentSlot.format('YYYY-MM-DD HH:mm')}`);
+          }
+        } else {
+          if (hasDbConflict) {
+            logger.info(`Database conflict found at: ${currentSlot.format('YYYY-MM-DD HH:mm')}`);
+          }
+          if (hasCalendarConflict) {
+            logger.info(`Google Calendar conflict found at: ${currentSlot.format('YYYY-MM-DD HH:mm')}`);
+          }
+        }
+      } else {
+        logger.info(`Slot too soon (${minutesUntilSlot}m): ${currentSlot.format('YYYY-MM-DD HH:mm')}`);
       }
-
-      logger.info(`Found ${availableSlots.length} available slots for ${searchDate}`);
-      return availableSlots;
-
-    } catch (error) {
-      logger.error('Error finding available slots:', error);
-      return [];
+      
+      // Move to next hour slot (only whole hours)
+      currentSlot.add(60, 'minutes');
     }
+
+    logger.info(`Found ${availableSlots.length} available slots for ${preference.date}`);
+    return availableSlots;
   }
 
   /**
@@ -359,9 +361,22 @@ class SchedulerService {
         
         logger.info(`Creating calendar event for ${startMoment.format()} to ${endMoment.format()}`);
         
+        // Double-check for conflicts in Google Calendar before creating
+        const calendarService = require('./calendar');
+        if (calendarService.isAvailable()) {
+          const conflictCheck = await calendarService.checkAvailability(
+            startMoment.toISOString(), 
+            endMoment.toISOString()
+          );
+          if (!conflictCheck.available) {
+            logger.warn(`Calendar conflict detected during booking: ${conflictCheck.reason}`);
+            // Still create the lesson in database but warn about calendar conflict
+          }
+        }
+        
         const calendarEvent = await calendarService.createEvent({
           summary: `שיעור מתמטיקה - ${student.getDisplayName()}`,
-          description: `שיעור מתמטיקה עם ${student.getDisplayName()}\n\nמורה: שפיר\nנושא: ${lessonDetails.subject || 'מתמטיקה'}\nטלפון תלמיד: ${student.phone || 'לא צוין'}`,
+          description: `שיעור מתמטיקה עם ${student.getDisplayName()}\n\nמורה: שפיר\nנושא: ${lessonDetails.subject || 'מתמטיקה'}\nטלפון תלמיד: ${student.phone || 'לא צוין'}\nID שיעור: ${lesson.id}`,
           start: {
             dateTime: startMoment.toISOString(),
             timeZone: settings.teacher.timezone
@@ -373,19 +388,25 @@ class SchedulerService {
           attendees: student.email ? [{ email: student.email }] : []
         });
 
-        // Update lesson with calendar event ID
+        // Update lesson with calendar event ID and mark as synced
         await lesson.update({
-          google_calendar_event_id: calendarEvent.id
+          google_calendar_event_id: calendarEvent.id,
+          calendar_sync_status: 'synced'
         });
 
         logger.scheduleLog('calendar_event_created', {
           lessonId: lesson.id,
-          calendarEventId: calendarEvent.id
+          calendarEventId: calendarEvent.id,
+          studentId: student.id,
+          startTime: startMoment.format()
         });
 
       } catch (calendarError) {
         logger.error('Failed to create calendar event:', calendarError);
-        // Don't fail the lesson booking if calendar fails
+        // Mark calendar sync as error but don't fail the lesson booking
+        await lesson.update({
+          calendar_sync_status: 'error'
+        });
       }
 
       // Update student statistics
