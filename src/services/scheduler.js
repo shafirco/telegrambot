@@ -924,31 +924,37 @@ class SchedulerService {
    */
   async checkTeacherAvailability(startTime, durationMinutes = 60) {
     try {
-      const endTime = moment(startTime).add(durationMinutes, 'minutes').toDate();
+      const startMoment = moment(startTime).tz(settings.teacher.timezone || 'Asia/Jerusalem');
+      const endTime = startMoment.clone().add(durationMinutes, 'minutes').toDate();
       
-      // Check for manual unavailability blocks in TeacherAvailability
+      logger.info(`Checking availability for ${startMoment.format('YYYY-MM-DD HH:mm')} (${durationMinutes} mins)`);
+      
+      // Check for manual unavailability blocks first
       const unavailableBlocks = await TeacherAvailability.findAll({
         where: {
           schedule_type: ['exception', 'block'],
           is_available: false,
           status: 'active',
           start_date: {
-            [sequelize.Sequelize.Op.lte]: moment(startTime).format('YYYY-MM-DD')
+            [sequelize.Sequelize.Op.lte]: startMoment.format('YYYY-MM-DD')
           },
           end_date: {
-            [sequelize.Sequelize.Op.gte]: moment(startTime).format('YYYY-MM-DD')
+            [sequelize.Sequelize.Op.gte]: startMoment.format('YYYY-MM-DD')
           }
         }
       });
+
+      logger.info(`Found ${unavailableBlocks.length} unavailable blocks`);
 
       // Check if any block conflicts with the requested time
       for (const block of unavailableBlocks) {
         const blockStart = moment(`${block.start_date} ${block.start_time}`);
         const blockEnd = moment(`${block.end_date} ${block.end_time}`);
-        const requestStart = moment(startTime);
+        const requestStart = startMoment;
         const requestEnd = moment(endTime);
 
         if (requestStart.isBefore(blockEnd) && requestEnd.isAfter(blockStart)) {
+          logger.info(`Time blocked by exception/block: ${block.description}`);
           return {
             available: false,
             reason: block.description || 'Teacher not available during this time'
@@ -956,47 +962,93 @@ class SchedulerService {
         }
       }
 
-      // If no specific blocks found, check if we have any availability records for this day
+      // Check availability records for this day
       const dayAvailability = await TeacherAvailability.findForDate(startTime);
+      logger.info(`Found ${dayAvailability.length} availability records for date`);
       
       if (dayAvailability.length === 0) {
-        // No specific availability records - use default business hours
-        const startMoment = moment(startTime).tz(settings.teacher.timezone);
+        logger.info('No availability records found, checking default business hours');
         
-        // Check if it's a business day
-        if (!settings.isBusinessDay(startTime)) {
+        // No specific availability records - use default business hours
+        const dayOfWeek = startMoment.format('dddd').toLowerCase();
+        const timeStr = startMoment.format('HH:mm');
+        
+        // Check if it's a business day (Sunday-Thursday in Israel)
+        const businessDays = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday'];
+        if (!businessDays.includes(dayOfWeek)) {
+          logger.info(`Not a business day: ${dayOfWeek}`);
           return {
             available: false,
             reason: 'Not a business day'
           };
         }
         
-        // Check if it's within business hours
-        if (!settings.isBusinessHour(startTime)) {
+        // Check business hours (default 9:00-18:00)
+        const businessStart = settings.businessHours?.start || '09:00';
+        const businessEnd = settings.businessHours?.end || '18:00';
+        
+        if (timeStr < businessStart || timeStr >= businessEnd) {
+          logger.info(`Outside business hours: ${timeStr} (${businessStart}-${businessEnd})`);
           return {
             available: false,
-            reason: 'Outside business hours'
+            reason: `Outside business hours (${businessStart}-${businessEnd})`
           };
         }
         
-        // Default to available if within business hours and day
+        logger.info('Within default business hours, available');
         return { available: true };
       }
 
       // Check specific availability records
-      const isAvailable = await TeacherAvailability.isAvailableAt(startTime, durationMinutes);
+      logger.info('Checking specific availability records...');
+      const availableRecord = await TeacherAvailability.isAvailableAt(startTime, durationMinutes);
       
+      if (availableRecord) {
+        logger.info(`Available via record ${availableRecord.id}`);
+        return { available: true };
+      }
+
+      // As fallback, check if we have any available recurring record for this day/time
+      const dayOfWeek = startMoment.format('dddd').toLowerCase();
+      const timeStr = startMoment.format('HH:mm:ss');
+      
+      const recurringAvailable = dayAvailability.find(record => 
+        record.schedule_type === 'recurring' && 
+        record.day_of_week === dayOfWeek &&
+        record.is_available === true &&
+        record.status === 'active' &&
+        timeStr >= record.start_time &&
+        timeStr <= record.end_time
+      );
+
+      if (recurringAvailable) {
+        logger.info(`Available via recurring schedule ${recurringAvailable.id}`);
+        return { available: true };
+      }
+      
+      logger.info('No matching availability found');
       return {
-        available: Boolean(isAvailable),
-        reason: isAvailable ? null : 'No availability window found for this time'
+        available: false,
+        reason: 'No availability window found for this time'
       };
 
     } catch (error) {
       logger.error('Error checking teacher availability:', error);
-      // If there's an error, default to available to be safe for business operations
+      
+      // Fallback to basic business hours check
+      const startMoment = moment(startTime).tz(settings.teacher.timezone || 'Asia/Jerusalem');
+      const dayOfWeek = startMoment.format('dddd').toLowerCase();
+      const timeStr = startMoment.format('HH:mm');
+      const businessDays = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday'];
+      
+      if (businessDays.includes(dayOfWeek) && timeStr >= '09:00' && timeStr <= '18:00') {
+        logger.info('Fallback to business hours - available');
+        return { available: true };
+      }
+      
       return { 
-        available: true,
-        reason: 'Error checking availability - defaulting to available'
+        available: false,
+        reason: 'Error checking availability and outside fallback hours'
       };
     }
   }

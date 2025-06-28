@@ -33,6 +33,50 @@ const validateAndSanitizeInput = (message) => {
 // Rate limiting check (simple in-memory implementation)
 const rateLimitMap = new Map();
 
+// Check if message is relevant to current conversation state
+const isStateRelevantMessage = (message, state) => {
+  const lowerMessage = message.toLowerCase();
+  
+  switch (state) {
+    case 'updating_name':
+      // Name should contain Hebrew or English letters, possibly with spaces
+      return /^[a-zA-Zא-ת\s]{2,50}$/.test(message.trim());
+    
+    case 'updating_phone':
+      // Phone should contain digits, possibly with dashes, spaces, or plus
+      return /^[\d\s\-\+\(\)]{7,20}$/.test(message.trim());
+    
+    case 'updating_email':
+      // Basic email validation
+      return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(message.trim());
+    
+    case 'updating_parent_name':
+      // Same as name validation
+      return /^[a-zA-Zא-ת\s]{2,50}$/.test(message.trim());
+    
+    case 'updating_parent_phone':
+      // Same as phone validation
+      return /^[\d\s\-\+\(\)]{7,20}$/.test(message.trim());
+    
+    case 'updating_parent_email':
+      // Same as email validation
+      return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(message.trim());
+    
+    case 'booking_request':
+      // Booking messages should contain time/date related keywords
+      const bookingKeywords = ['שיעור', 'זמן', 'תאריך', 'מחר', 'אחרי', 'לפני', 'בשעה', 'יום', 'שבוע', 'חודש'];
+      return bookingKeywords.some(keyword => lowerMessage.includes(keyword)) || /\d/.test(message);
+    
+    case 'waitlist_request':
+      // Waitlist messages should contain time preferences
+      const waitlistKeywords = ['רשימת המתנה', 'להמתין', 'כשיתפנה', 'יום', 'זמן', 'שעה'];
+      return waitlistKeywords.some(keyword => lowerMessage.includes(keyword));
+    
+    default:
+      return true; // Allow any message for unknown states
+  }
+};
+
 const checkRateLimit = (telegramId) => {
   const now = Date.now();
   const key = telegramId.toString();
@@ -131,17 +175,54 @@ const handleText = async (ctx) => {
 
     // Check conversation state with timeout protection
     const conversationState = ctx.session?.step;
-    const sessionTimeout = 30 * 60 * 1000; // 30 minutes
+    const sessionTimeout = 10 * 60 * 1000; // 10 minutes (reduced from 30)
     
     if (ctx.session?.lastActivity && (Date.now() - ctx.session.lastActivity) > sessionTimeout) {
+      logger.info(`Session timeout for student ${student.id}, clearing conversation state`);
       ctx.session.step = null;
       ctx.session.data = {};
+      ctx.session.reschedule_lesson_id = null;
       await ctx.reply('⏰ פג תוקף השיחה. בואו נתחיל מחדש - איך אוכל לעזור?');
+      return; // Exit early after timeout
+    }
+    
+    // Initialize session if not exists
+    if (!ctx.session) {
+      ctx.session = {};
     }
     
     // Update session activity
-    if (ctx.session) {
-      ctx.session.lastActivity = Date.now();
+    ctx.session.lastActivity = Date.now();
+    
+    // If conversation state exists but message seems unrelated, offer to reset
+    if (conversationState && !isStateRelevantMessage(message, conversationState)) {
+      const stateNames = {
+        'updating_name': 'עדכון שם',
+        'updating_phone': 'עדכון טלפון',
+        'updating_email': 'עדכון אימייל',
+        'updating_parent_name': 'עדכון שם הורה',
+        'updating_parent_phone': 'עדכון טלפון הורה',
+        'updating_parent_email': 'עדכון אימייל הורה',
+        'booking_request': 'תיאום שיעור',
+        'waitlist_request': 'רשימת המתנה'
+      };
+      
+      const stateName = stateNames[conversationState] || conversationState;
+      
+      // Only ask for reset if it's a details update state
+      if (conversationState.startsWith('updating_')) {
+        await ctx.reply(
+          `🤔 <b>נראה שההודעה לא קשורה ל${stateName}</b>\n\nהאם תרצה לבטל את העדכון ולחזור לתפריט הראשי?`,
+          {
+            parse_mode: 'HTML',
+            reply_markup: Markup.inlineKeyboard([
+              [Markup.button.callback('✅ כן, בטל ועבור לתפריט', 'back_to_menu')],
+              [Markup.button.callback('❌ לא, המשך עם העדכון', `update_personal_details`)]
+            ]).reply_markup
+          }
+        );
+        return;
+      }
     }
 
     switch (conversationState) {

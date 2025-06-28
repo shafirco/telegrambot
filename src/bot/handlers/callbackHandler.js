@@ -108,8 +108,14 @@ async function handle(ctx) {
           await handleConfirmCancel(ctx, callbackData, student);
         } else if (callbackData.startsWith('reschedule_lesson_')) {
           await handleRescheduleSpecificLesson(ctx, callbackData, student);
+        } else if (callbackData.startsWith('reschedule_confirm_')) {
+          await handleRescheduleConfirm(ctx, callbackData, student);
+        } else if (callbackData.startsWith('reschedule_custom_')) {
+          await handleRescheduleCustom(ctx, callbackData, student);
         } else if (callbackData.startsWith('confirm_')) {
           await handleConfirm(ctx, callbackData, student);
+        } else if (callbackData === 'back_to_menu') {
+          await handleBackToMenu(ctx, student);
         } else if (callbackData.startsWith('waitlist_day_')) {
           await handleWaitlistDay(ctx, student);
         } else if (callbackData.startsWith('waitlist_time_')) {
@@ -497,10 +503,37 @@ async function handleConfirm(ctx, callbackData, student) {
     const id = parts[2];
     
     if (action === 'cancel') {
-      await ctx.reply(
-        `✅ <b>השיעור בוטל</b>\n\nהשיעור שלך נבוטל בהצלחה. כל מזיון מקולקטי יועבר לפי יועמת המדינה.`,
-        { parse_mode: 'HTML' }
-      );
+      // Actually cancel the lesson using the scheduler service
+      const schedulerService = require('../../services/scheduler');
+      
+      try {
+        const result = await schedulerService.cancelLesson(id, student, 'Student cancellation via bot');
+        
+        if (result.success) {
+          await ctx.reply(
+            `✅ <b>השיעור בוטל בהצלחה</b>\n\n${result.message}\n\nתודה שהודעת מראש! 🙏`,
+            { 
+              parse_mode: 'HTML',
+              reply_markup: Markup.inlineKeyboard([
+                [Markup.button.callback('🔙 חזרה לתפריט הראשי', 'back_to_menu')]
+              ]).reply_markup
+            }
+          );
+        } else {
+          throw new Error(result.message || 'Failed to cancel lesson');
+        }
+      } catch (cancelError) {
+        logger.error('Failed to cancel lesson:', cancelError);
+        await ctx.reply(
+          `❌ <b>שגיאה בביטול השיעור</b>\n\n${cancelError.message}\n\nאנא נסה שוב או צור קשר עם המורה.`,
+          { 
+            parse_mode: 'HTML',
+            reply_markup: Markup.inlineKeyboard([
+              [Markup.button.callback('🔙 חזרה לתפריט הראשי', 'back_to_menu')]
+            ]).reply_markup
+          }
+        );
+      }
       
       logger.info('Lesson cancelled via callback', { 
         studentId: student.id, 
@@ -1332,18 +1365,53 @@ async function handleRescheduleSpecificLesson(ctx, callbackData, student) {
     const dateStr = startTime.format('DD/MM/YYYY');
     const timeStr = startTime.format('HH:mm');
 
-    await ctx.reply(
-      `🔄 <b>החלפת שיעור</b>\n\nאתה מחליף את השיעור שמתוכנן ל-${dateStr} בשעה ${timeStr}\n\nאנא ספר לי מתי תרצה לתאם את השיעור החדש במקום. אתה יכול לומר דברים כמו:\n\n• "אני רוצה להחליף לשיעור מחר בשעה 3 אחר הצהריים"\n• "אני פנוי ביום שלישי הבא אחר הצהריים"\n• "תתאם לי משהו ביום שישי אחרי 4"\n\nפשוט כתוב את הזמן החדש באופן טבעי! 🕐`,
-      { 
-        parse_mode: 'HTML',
-        reply_markup: Markup.inlineKeyboard([
-          [Markup.button.callback('🔙 חזרה לתפריט הראשי', 'back_to_menu')]
-        ]).reply_markup
-      }
-    );
+    // Find available slots for next 7 days
+    const schedulerService = require('../../services/scheduler');
+    const availableSlots = await schedulerService.findNextAvailableSlots(lesson.duration_minutes, 7);
 
-    ctx.session.step = 'booking_request';
-    ctx.session.reschedule_lesson_id = lessonId;
+    if (availableSlots.length === 0) {
+      await ctx.reply(
+        `🔄 <b>החלפת שיעור</b>\n\nאתה מחליף את השיעור שמתוכנן ל-${dateStr} בשעה ${timeStr}\n\n❌ <b>אין זמנים זמינים השבוע הקרוב</b>\n\nאתה יכול:\n• להצטרף לרשימת המתנה\n• לנסות לכתוב זמן ספציפי ("אני רוצה שיעור ביום רביעי הבא")`,
+        { 
+          parse_mode: 'HTML',
+          reply_markup: Markup.inlineKeyboard([
+            [Markup.button.callback('⏰ הצטרף לרשימת המתנה', 'join_waitlist')],
+            [Markup.button.callback('🔙 חזרה לתפריט הראשי', 'back_to_menu')]
+          ]).reply_markup
+        }
+      );
+      return;
+    }
+
+    let message = `🔄 <b>החלפת שיעור</b>\n\nאתה מחליף את השיעור שמתוכנן ל-${dateStr} בשעה ${timeStr}\n\n📅 <b>זמנים זמינים לשיעור החדש:</b>\n\n`;
+    
+    const keyboard = [];
+    
+    availableSlots.slice(0, 8).forEach((slot, index) => {
+      const slotStart = moment(slot.start).tz(student.timezone || 'Asia/Jerusalem');
+      const dayName = slotStart.format('dddd');
+      const dateStr = slotStart.format('DD/MM');
+      const timeStr = slotStart.format('HH:mm');
+      
+      message += `${index + 1}. ${dayName} ${dateStr} בשעה ${timeStr}\n`;
+      
+      keyboard.push([
+        Markup.button.callback(
+          `${dayName} ${dateStr} ${timeStr}`, 
+          `reschedule_confirm_${lessonId}_${slot.start.getTime()}`
+        )
+      ]);
+    });
+
+    message += '\nבחר זמן חדש מהרשימה, או כתוב זמן אחר באופן טבעי.';
+
+    keyboard.push([Markup.button.callback('✏️ כתוב זמן אחר', `reschedule_custom_${lessonId}`)]);
+    keyboard.push([Markup.button.callback('🔙 חזרה לתפריט הראשי', 'back_to_menu')]);
+
+    await ctx.reply(message, {
+      parse_mode: 'HTML',
+      reply_markup: Markup.inlineKeyboard(keyboard).reply_markup
+    });
 
   } catch (error) {
     logger.error('Error in handleRescheduleSpecificLesson:', error);
@@ -1451,10 +1519,183 @@ async function handleUpdateDetailField(ctx, callbackData, student) {
   ctx.session.step = `updating_${field}`;
 }
 
+/**
+ * Handle back to menu - reset conversation state
+ */
+async function handleBackToMenu(ctx, student) {
+  try {
+    // Clear all conversation state
+    ctx.session.step = null;
+    ctx.session.data = {};
+    ctx.session.reschedule_lesson_id = null;
+    ctx.session.lastActivity = Date.now();
+    
+    logger.info(`Conversation state reset for student ${student.id}`);
+    
+    // Show main menu
+    const { Markup } = require('telegraf');
+    
+    await ctx.reply(
+      `🏠 <b>התפריט הראשי</b>\n\nמה תרצה לעשות?`,
+      {
+        parse_mode: 'HTML',
+        reply_markup: Markup.inlineKeyboard([
+          [Markup.button.callback('📅 תאום שיעור', 'book_lesson')],
+          [Markup.button.callback('📋 השיעורים שלי', 'my_lessons')],
+          [Markup.button.callback('🔄 החלף שיעור', 'reschedule_lesson')],
+          [Markup.button.callback('❌ בטל שיעור', 'cancel_lesson')],
+          [Markup.button.callback('👤 פרטים אישיים', 'settings')],
+          [Markup.button.callback('📞 פרטי המורה', 'teacher_contact')]
+        ]).reply_markup
+      }
+    );
+    
+  } catch (error) {
+    logger.error('Error handling back to menu:', error);
+    await ctx.reply('❌ סליחה, משהו השתבש. אנא נסה שוב.');
+  }
+}
+
+/**
+ * Handle reschedule confirmation with specific time slot
+ */
+async function handleRescheduleConfirm(ctx, callbackData, student) {
+  try {
+    const parts = callbackData.split('_');
+    const lessonId = parts[2];
+    const newStartTime = new Date(parseInt(parts[3]));
+
+    const lesson = await Lesson.findByPk(lessonId);
+    if (!lesson || lesson.student_id !== student.id) {
+      await ctx.reply('❌ השיעור לא נמצא או שאינו שייך לך.');
+      return;
+    }
+
+    const schedulerService = require('../../services/scheduler');
+    
+    // Book the new time slot
+    const newSlotDetails = {
+      start: newStartTime,
+      end: new Date(newStartTime.getTime() + lesson.duration_minutes * 60000),
+      duration: lesson.duration_minutes
+    };
+
+    try {
+      const result = await schedulerService.bookTimeSlot(newSlotDetails, student, {
+        subject: lesson.subject,
+        topic: lesson.topic,
+        lesson_type: lesson.lesson_type,
+        original_request: `Rescheduled from ${lesson.start_time}`
+      });
+
+      if (result.success) {
+        // Cancel the old lesson (mark as rescheduled)
+        await lesson.update({
+          status: 'cancelled_by_student',
+          cancelled_at: new Date(),
+          cancelled_by: 'student',
+          cancellation_reason: 'Rescheduled to new time',
+          is_rescheduled: true
+        });
+
+        // Cancel in Google Calendar if sync is enabled
+        if (lesson.google_calendar_event_id) {
+          try {
+            const calendarService = require('../../services/calendar');
+            await calendarService.deleteEvent(lesson.google_calendar_event_id);
+            logger.info(`Cancelled original lesson ${lessonId} in Google Calendar for reschedule`);
+          } catch (calendarError) {
+            logger.error('Error cancelling original lesson in Google Calendar:', calendarError);
+          }
+        }
+
+        const newStartMoment = moment(newStartTime).tz(student.timezone || 'Asia/Jerusalem');
+        const oldStartMoment = moment(lesson.start_time).tz(student.timezone || 'Asia/Jerusalem');
+
+        await ctx.reply(
+          `✅ <b>השיעור הוחלף בהצלחה!</b>\n\n📅 <b>השיעור הישן:</b> ${oldStartMoment.format('dddd DD/MM בשעה HH:mm')}\n📅 <b>השיעור החדש:</b> ${newStartMoment.format('dddd DD/MM בשעה HH:mm')}\n\n🎉 הזמן החדש נוסף ללוח השנה שלך!`,
+          {
+            parse_mode: 'HTML',
+            reply_markup: Markup.inlineKeyboard([
+              [Markup.button.callback('📅 הצג את השיעורים שלי', 'my_schedule')],
+              [Markup.button.callback('🔙 חזרה לתפריט הראשי', 'back_to_menu')]
+            ]).reply_markup
+          }
+        );
+
+        logger.info(`Lesson ${lessonId} rescheduled successfully`, {
+          studentId: student.id,
+          oldTime: lesson.start_time,
+          newTime: newStartTime,
+          newLessonId: result.lesson.id
+        });
+
+      } else {
+        throw new Error(result.message || 'Failed to book new time slot');
+      }
+
+    } catch (bookingError) {
+      logger.error('Failed to book new time slot for reschedule:', bookingError);
+      await ctx.reply(
+        `❌ <b>שגיאה בהחלפת השיעור</b>\n\n${bookingError.message}\n\nהזמן שבחרת אולי כבר תפוס. אנא נסה זמן אחר.`,
+        {
+          parse_mode: 'HTML',
+          reply_markup: Markup.inlineKeyboard([
+            [Markup.button.callback('🔄 בחר זמן אחר', `reschedule_lesson_${lessonId}`)],
+            [Markup.button.callback('🔙 חזרה לתפריט הראשי', 'back_to_menu')]
+          ]).reply_markup
+        }
+      );
+    }
+
+  } catch (error) {
+    logger.error('Error in handleRescheduleConfirm:', error);
+    await ctx.reply('❌ אירעה שגיאה בהחלפת השיעור. אנא נסה שוב.');
+  }
+}
+
+/**
+ * Handle reschedule with custom time input
+ */
+async function handleRescheduleCustom(ctx, callbackData, student) {
+  try {
+    const lessonId = callbackData.split('_')[2];
+    const lesson = await Lesson.findByPk(lessonId);
+
+    if (!lesson || lesson.student_id !== student.id) {
+      await ctx.reply('❌ השיעור לא נמצא או שאינו שייך לך.');
+      return;
+    }
+
+    const startTime = moment(lesson.start_time).tz(student.timezone || 'Asia/Jerusalem');
+    const dateStr = startTime.format('DD/MM/YYYY');
+    const timeStr = startTime.format('HH:mm');
+
+    await ctx.reply(
+      `🔄 <b>החלפת שיעור - זמן מותאם אישית</b>\n\nאתה מחליף את השיעור שמתוכנן ל-${dateStr} בשעה ${timeStr}\n\nכתוב את הזמן החדש שתרצה באופן טבעי:\n\n• "אני רוצה להחליף למחר בשעה 3 אחר הצהריים"\n• "אני פנוי ביום שלישי הבא אחר הצהריים"\n• "תתאם לי משהו ביום שישי אחרי 4"\n\nפשוט כתוב את הזמן החדש! 🕐`,
+      { 
+        parse_mode: 'HTML',
+        reply_markup: Markup.inlineKeyboard([
+          [Markup.button.callback('🔙 חזרה לרשימת זמנים', `reschedule_lesson_${lessonId}`)],
+          [Markup.button.callback('🔙 חזרה לתפריט הראשי', 'back_to_menu')]
+        ]).reply_markup
+      }
+    );
+
+    ctx.session.step = 'booking_request';
+    ctx.session.reschedule_lesson_id = lessonId;
+
+  } catch (error) {
+    logger.error('Error in handleRescheduleCustom:', error);
+    await ctx.reply('❌ אירעה שגיאה. אנא נסה שוב.');
+  }
+}
+
 module.exports = {
   handle,
   handleJoinWaitlist,
   handleWaitlistDay,
   handleWaitlistTime,
-  handleStudentDetailsUpdate
+  handleStudentDetailsUpdate,
+  handleBackToMenu
 }; 

@@ -53,8 +53,8 @@ class AIScheduler {
       this.llm = new ChatOpenAI({
         modelName: process.env.OPENAI_MODEL || 'gpt-4-turbo-preview',
         temperature: parseFloat(process.env.AI_TEMPERATURE) || 0.3,
-        maxTokens: parseInt(process.env.AI_MAX_TOKENS) || 500,
-        timeout: parseInt(process.env.AI_TIMEOUT) || 10000,
+        maxTokens: parseInt(process.env.AI_MAX_TOKENS) || 800,
+        timeout: parseInt(process.env.AI_TIMEOUT) || 30000,
         openAIApiKey: process.env.OPENAI_API_KEY
       });
       
@@ -149,24 +149,48 @@ class AIScheduler {
 
       logger.aiLog('processing_request', userMessage, 'undefined', { studentId: studentProfile.id });
 
-      // Use chain to process the request
+      // Use chain to process the request with longer timeout
       const response = await Promise.race([
         this.chain.invoke({
           user_message: userMessage,
           context: contextPrompt
         }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('AI timeout')), 10000))
+        new Promise((_, reject) => setTimeout(() => reject(new Error('AI timeout')), 25000))
       ]);
+
+      logger.info('Raw AI response type:', typeof response);
+      logger.info('Raw AI response length:', response?.length || 'undefined');
+      
+      // Handle different response types
+      let responseText = '';
+      if (typeof response === 'string') {
+        responseText = response;
+      } else if (response && typeof response.content === 'string') {
+        responseText = response.content;
+      } else if (response && typeof response.text === 'string') {
+        responseText = response.text;
+      } else if (Array.isArray(response)) {
+        // Handle array of characters/chunks
+        responseText = response.join('');
+      } else if (response && typeof response === 'object') {
+        // Try to extract text from object
+        responseText = JSON.stringify(response);
+      } else {
+        logger.warn('Unexpected response type, using fallback');
+        return this.fallbackParsing(userMessage, studentProfile);
+      }
 
       // Parse JSON response with better error handling
       let parsedResponse;
       try {
         // Clean the response more thoroughly
-        const cleanResponse = response
+        const cleanResponse = responseText
           .replace(/```json\n?|\n?```/g, '')
           .replace(/```\n?|\n?```/g, '')
           .replace(/^\s*[\r\n]+|[\r\n]+\s*$/g, '')
           .trim();
+        
+        logger.info('Cleaned response:', cleanResponse.substring(0, 200) + '...');
         
         // Find JSON object within the response
         const jsonMatch = cleanResponse.match(/\{[\s\S]*\}/);
@@ -177,7 +201,7 @@ class AIScheduler {
         }
       } catch (parseError) {
         logger.error('Failed to parse AI response as JSON:', parseError);
-        logger.error('Raw AI response:', response);
+        logger.error('Clean response:', responseText.substring(0, 500));
         
         // Use fallback instead of throwing error
         logger.info('Using fallback parsing due to JSON error');
