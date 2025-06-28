@@ -179,6 +179,22 @@ const Student = sequelize.define('Student', {
     validate: {
       isEmail: true
     }
+  },
+  
+  // Payment information
+  payment_debt: {
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: false,
+    defaultValue: 0.00,
+    validate: {
+      min: 0
+    }
+  },
+  
+  currency: {
+    type: DataTypes.STRING(3),
+    allowNull: false,
+    defaultValue: 'ILS'
   }
 }, {
   indexes: [
@@ -254,6 +270,40 @@ Student.prototype.incrementLessonCount = async function(type = 'booked') {
       break;
   }
   await this.save();
+};
+
+Student.prototype.addDebt = async function(amount) {
+  this.payment_debt = parseFloat(this.payment_debt || 0) + parseFloat(amount);
+  await this.save();
+  return this.payment_debt;
+};
+
+Student.prototype.payDebt = async function(amount) {
+  const currentDebt = parseFloat(this.payment_debt || 0);
+  const paymentAmount = parseFloat(amount);
+  this.payment_debt = Math.max(0, currentDebt - paymentAmount);
+  await this.save();
+  return this.payment_debt;
+};
+
+Student.prototype.getFormattedDebt = function() {
+  const debt = parseFloat(this.payment_debt || 0);
+  return debt > 0 ? `${debt.toFixed(2)} ${this.currency}` : 'אין חוב';
+};
+
+Student.prototype.getPreferredDaysHebrew = function() {
+  const daysMap = {
+    'sunday': 'ראשון',
+    'monday': 'שני', 
+    'tuesday': 'שלישי',
+    'wednesday': 'רביעי',
+    'thursday': 'חמישי',
+    'friday': 'שישי',
+    'saturday': 'שבת'
+  };
+  
+  const englishDays = this.getPreferredDaysArray();
+  return englishDays.map(day => daysMap[day] || day);
 };
 
 // Class methods

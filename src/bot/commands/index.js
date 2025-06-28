@@ -218,12 +218,38 @@ const status = async (ctx) => {
   try {
     const student = ctx.student;
 
-    // Get upcoming lessons
+    // Get accurate lesson counts from database
+    const [bookedCount, completedCount, cancelledCount] = await Promise.all([
+      Lesson.count({
+        where: {
+          student_id: student.id,
+          status: {
+            [Op.in]: ['scheduled', 'confirmed', 'pending']
+          }
+        }
+      }),
+      Lesson.count({
+        where: {
+          student_id: student.id,
+          status: 'completed'
+        }
+      }),
+      Lesson.count({
+        where: {
+          student_id: student.id,
+          status: {
+            [Op.in]: ['cancelled_by_student', 'cancelled_by_teacher', 'no_show']
+          }
+        }
+      })
+    ]);
+
+    // Get upcoming lessons - only future lessons that are confirmed/scheduled
     const upcomingLessons = await Lesson.findAll({
       where: {
         student_id: student.id,
         status: {
-          [Op.in]: ['scheduled', 'confirmed']
+          [Op.in]: ['scheduled', 'confirmed', 'pending']
         },
         start_time: {
           [Op.gte]: new Date()
@@ -243,20 +269,53 @@ const status = async (ctx) => {
       limit: 2
     });
 
-    let statusMessage = `👤 <b>המצב שלך - ${student.getDisplayName()}</b>\n\n`;
+    let statusMessage = `📊 <b>סטטוס - ${student.getDisplayName()}</b>\n\n`;
 
-    // Lesson statistics
-    statusMessage += `📊 <b>סטטיסטיקות:</b>\n`;
-    statusMessage += `• סה"כ שיעורים שהוזמנו: ${student.total_lessons_booked}\n`;
-    statusMessage += `• שיעורים שהושלמו: ${student.total_lessons_completed}\n`;
-    statusMessage += `• חברות מתאריך: ${moment(student.created_at).format('DD/MM/YYYY')}\n\n`;
+    // Personal information
+    statusMessage += `👤 <b>פרטים אישיים:</b>\n`;
+    statusMessage += `📧 אימייל: ${student.email || 'לא מוגדר'}\n`;
+    statusMessage += `📱 טלפון: ${student.phone_number || 'לא מוגדר'}\n`;
+    if (student.parent_name) {
+      statusMessage += `👨‍👩‍👧‍👦 הורה: ${student.parent_name}`;
+      if (student.parent_phone) {
+        statusMessage += ` (${student.parent_phone})`;
+      }
+      statusMessage += `\n`;
+    }
+    statusMessage += `📅 חבר מתאריך: ${moment(student.registration_date || student.created_at).format('DD/MM/YYYY')}\n\n`;
 
-    // Upcoming lessons
+    // Lesson statistics - with corrected counts
+    statusMessage += `📊 <b>סטטיסטיקות שיעורים:</b>\n`;
+    statusMessage += `• שיעורים מתוכננים: ${bookedCount}\n`;
+    statusMessage += `• שיעורים שהושלמו: ${completedCount}\n`;
+    statusMessage += `• שיעורים שבוטלו: ${cancelledCount}\n\n`;
+
+    // Payment information including debt
+    statusMessage += `💰 <b>מידע כספי:</b>\n`;
+    statusMessage += `• חוב נוכחי: ${student.getFormattedDebt()}\n`;
+    statusMessage += `• מטבע: ${student.currency || 'ILS'}\n\n`;
+
+    // Lesson preferences with Hebrew day names
+    statusMessage += `⚙️ <b>העדפות שיעור:</b>\n`;
+    statusMessage += `• אורך מועדף: ${student.preferred_lesson_duration || config.lessons.defaultDuration} דקות\n`;
+    const hebrewDays = student.getPreferredDaysHebrew();
+    statusMessage += `• ימים מועדפים: ${hebrewDays.join(', ')}\n`;
+    statusMessage += `• שעות מועדפות: ${student.preferred_time_start || '16:00'} - ${student.preferred_time_end || '19:00'}\n\n`;
+
+    // Upcoming lessons - showing actual future lessons
     if (upcomingLessons.length > 0) {
       statusMessage += `📅 <b>השיעורים הקרובים שלך:</b>\n`;
       upcomingLessons.forEach((lesson, index) => {
-        const lessonTime = moment(lesson.start_time).format('dddd, D בMMMM בשעה HH:mm');
-        statusMessage += `${index + 1}. ${lesson.subject} - ${lessonTime}\n`;
+        const lessonTime = moment(lesson.start_time).tz(student.timezone || 'Asia/Jerusalem');
+        const dayName = getHebrewDayName(lessonTime.format('dddd'));
+        const dateStr = lessonTime.format('DD/MM/YYYY');
+        const timeStr = lessonTime.format('HH:mm');
+        const statusIcon = lesson.status === 'confirmed' ? '✅' : lesson.status === 'scheduled' ? '🕐' : '📝';
+        
+        statusMessage += `${statusIcon} ${dayName}, ${dateStr} בשעה ${timeStr}\n`;
+        if (lesson.topic) {
+          statusMessage += `   📚 ${lesson.topic}\n`;
+        }
       });
       statusMessage += '\n';
     } else {
@@ -267,10 +326,27 @@ const status = async (ctx) => {
     if (waitlistEntries.length > 0) {
       statusMessage += `⏰ <b>רשימות המתנה פעילות:</b>\n`;
       waitlistEntries.forEach((entry, index) => {
-        statusMessage += `${index + 1}. מיקום #${entry.position} - ${entry.request_type || 'זמן גמיש'}\n`;
+        const preferredDate = entry.preferred_date ? moment(entry.preferred_date).format('DD/MM') : 'גמיש';
+        const timePreference = getHebrewTimePreference(entry.time_preference || 'anytime');
+        statusMessage += `${index + 1}. ${preferredDate} - ${timePreference}\n`;
       });
+      statusMessage += '\n';
     } else {
-      statusMessage += `⏰ <b>לא ברשימת המתנה כרגע</b>\n`;
+      statusMessage += `⏰ <b>לא ברשימת המתנה כרגע</b>\n\n`;
+    }
+
+    // Update student counts if they're different (sync with actual data)
+    if (student.total_lessons_booked !== bookedCount || 
+        student.total_lessons_completed !== completedCount || 
+        student.total_lessons_cancelled !== cancelledCount) {
+      
+      await student.update({
+        total_lessons_booked: bookedCount,
+        total_lessons_completed: completedCount,
+        total_lessons_cancelled: cancelledCount
+      });
+      
+      logger.info(`Updated lesson counts for student ${student.id}: booked=${bookedCount}, completed=${completedCount}, cancelled=${cancelledCount}`);
     }
 
     const buttons = Markup.inlineKeyboard([
@@ -293,6 +369,20 @@ const status = async (ctx) => {
     await ctx.reply('❌ סליחה, הייתה שגיאה בהצגת המצב שלך. אנא נסה שוב.');
   }
 };
+
+// Helper function for Hebrew day names
+function getHebrewDayName(englishDay) {
+  const daysMap = {
+    'Sunday': 'ראשון',
+    'Monday': 'שני',
+    'Tuesday': 'שלישי', 
+    'Wednesday': 'רביעי',
+    'Thursday': 'חמישי',
+    'Friday': 'שישי',
+    'Saturday': 'שבת'
+  };
+  return daysMap[englishDay] || englishDay;
+}
 
 // Waitlist command
 const waitlist = async (ctx) => {
@@ -358,28 +448,38 @@ When your preferred times aren't available, I can add you to the waitlist and no
 const settings = async (ctx) => {
   const student = ctx.student;
   
+  // Get Hebrew day names for preferred days
+  const hebrewDays = student.getPreferredDaysHebrew();
+  
   const settingsText = `⚙️ <b>הגדרות</b>
 
 📊 <b>הפרופיל שלך:</b>
-👤 שם: ${student.first_name} ${student.last_name || ''}
+👤 שם: ${student.getDisplayName()}
 📧 אימייל: ${student.email || 'לא הוגדר'}
-📱 טלפון: ${student.phone || 'לא הוגדר'}
-🕐 אזור זמן: ${student.timezone || 'ברירת מחדל'}
+📱 טלפון: ${student.phone_number || 'לא הוגדר'}
+🕐 אזור זמן: ${student.timezone || 'Asia/Jerusalem'}
 ⏱️ משך שיעור מועדף: ${student.preferred_lesson_duration || 60} דקות
 
-📚 <b>העדפות שיעור:</b>
-📅 ימים מועדפים: ${student.preferred_days || 'גמיש'}
-🕒 שעות מועדפות: ${student.preferred_time_start || '09:00'} - ${student.preferred_time_end || '18:00'}
+👨‍👩‍👧‍👦 <b>פרטי הורה:</b>
+👤 שם הורה: ${student.parent_name || 'לא הוגדר'}
+📱 טלפון הורה: ${student.parent_phone || 'לא הוגדר'}
+📧 אימייל הורה: ${student.parent_email || 'לא הוגדר'}
 
-💳 <b>מידע תשלום:</b>
+📚 <b>העדפות שיעור:</b>
+📅 ימים מועדפים: ${hebrewDays.join(', ')}
+🕒 שעות מועדפות: ${student.preferred_time_start || '16:00'} - ${student.preferred_time_end || '19:00'}
+
+💳 <b>מידע כספי:</b>
 💰 מחיר לשעה: ₪${config.lessons.defaultPrice}
-📊 סה"כ שיעורים: ${student.total_lessons || 0}
-✅ שיעורים שהושלמו: ${student.completed_lessons || 0}`;
+💸 חוב נוכחי: ${student.getFormattedDebt()}
+📊 סה"כ שיעורים: ${student.total_lessons_booked || 0}
+✅ שיעורים שהושלמו: ${student.total_lessons_completed || 0}`;
 
   await ctx.reply(settingsText, {
     parse_mode: 'HTML',
     reply_markup: Markup.inlineKeyboard([
-      [Markup.button.callback('📝 עדכן פרטים', 'update_personal_details')],
+      [Markup.button.callback('📝 עדכן פרטים אישיים', 'update_personal_details')],
+      [Markup.button.callback('👨‍👩‍👧‍👦 עדכן פרטי הורה', 'update_parent_details')],
       [Markup.button.callback('🌐 שפה', 'set_language')],
       [Markup.button.callback('📞 צור קשר', 'contact_teacher')],
       [Markup.button.callback('✅ סיום', 'settings_done')]

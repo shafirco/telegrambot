@@ -116,6 +116,8 @@ async function handle(ctx) {
           await handleConfirm(ctx, callbackData, student);
         } else if (callbackData === 'back_to_menu') {
           await handleBackToMenu(ctx, student);
+        } else if (callbackData === 'book_alternative' || callbackData.startsWith('book_slot_')) {
+          await handleBookAlternative(ctx, callbackData, student);
         } else if (callbackData.startsWith('waitlist_day_')) {
           await handleWaitlistDay(ctx, student);
         } else if (callbackData.startsWith('waitlist_time_')) {
@@ -126,6 +128,8 @@ async function handle(ctx) {
           await handleSelectTime(ctx, callbackData, student);
         } else if (callbackData.startsWith('update_detail_')) {
           await handleUpdateDetailField(ctx, callbackData, student);
+        } else if (callbackData === 'update_parent_details') {
+          await handleUpdateParentDetails(ctx, student);
         } else {
           logger.warn('Unknown callback data:', callbackData);
           await ctx.reply('❓ פעולה לא מוכרת. אנא נסה שוב.');
@@ -1318,6 +1322,29 @@ async function handleCancelLessonMenu(ctx, student) {
 }
 
 /**
+ * Handle update parent details menu
+ */
+async function handleUpdateParentDetails(ctx, student) {
+  try {
+    const message = `👨‍👩‍👧‍👦 <b>עדכון פרטי הורה</b>\n\nמה תרצה לעדכן?\n\n<b>הפרטים הנוכחיים:</b>\n👤 שם הורה: ${student.parent_name || 'לא מוגדר'}\n📱 טלפון הורה: ${student.parent_phone || 'לא מוגדר'}\n📧 אימייל הורה: ${student.parent_email || 'לא מוגדר'}`;
+    
+    await ctx.reply(message, {
+      parse_mode: 'HTML',
+      reply_markup: Markup.inlineKeyboard([
+        [Markup.button.callback('👤 שם הורה', 'update_detail_parent_name')],
+        [Markup.button.callback('📱 טלפון הורה', 'update_detail_parent_phone')],
+        [Markup.button.callback('📧 אימייל הורה', 'update_detail_parent_email')],
+        [Markup.button.callback('🔙 חזור להגדרות', 'settings')]
+      ]).reply_markup
+    });
+    
+  } catch (error) {
+    logger.error('Error handling update parent details:', error);
+    await ctx.reply('❌ סליחה, משהו השתבש. אנא נסה שוב.');
+  }
+}
+
+/**
  * Handle update personal details
  */
 async function handleUpdatePersonalDetails(ctx, student) {
@@ -1557,6 +1584,156 @@ async function handleBackToMenu(ctx, student) {
 }
 
 /**
+ * Handle booking alternative time slots
+ */
+async function handleBookAlternative(ctx, callbackData, student) {
+  try {
+    logger.info(`Handling book alternative: ${callbackData} for student ${student.id}`);
+    
+    // Check if this is from available slots or a specific time slot
+    if (callbackData === 'book_alternative') {
+      // Show available slots
+      const schedulerService = require('../../services/scheduler');
+      const slots = await schedulerService.findNextAvailableSlots(60, 7); // Next 7 days
+      
+      if (slots.length === 0) {
+        await ctx.reply('😔 אין זמנים זמינים בשבוע הקרוב. האם תרצה להצטרף לרשימת המתנה?', {
+          reply_markup: Markup.inlineKeyboard([
+            [Markup.button.callback('📝 הצטרף לרשימת המתנה', 'join_waitlist')],
+            [Markup.button.callback('🔙 חזור', 'book_lesson')]
+          ]).reply_markup
+        });
+        return;
+      }
+      
+      // Group slots by date
+      const slotsByDate = {};
+      slots.forEach(slot => {
+        const dateStr = moment(slot.start).tz(student.timezone || 'Asia/Jerusalem').format('YYYY-MM-DD');
+        if (!slotsByDate[dateStr]) {
+          slotsByDate[dateStr] = [];
+        }
+        slotsByDate[dateStr].push(slot);
+      });
+      
+      let message = '📅 <b>זמנים זמינים השבוע:</b>\n\n';
+      const buttons = [];
+      
+      Object.keys(slotsByDate).slice(0, 6).forEach(dateStr => {
+        const dateSlots = slotsByDate[dateStr];
+        const dateMoment = moment(dateStr).tz(student.timezone || 'Asia/Jerusalem');
+        const dayName = dateMoment.format('dddd');
+        const hebrewDay = getHebrewDayName(dayName);
+        const formattedDate = dateMoment.format('DD/MM');
+        
+        message += `🗓️ <b>${hebrewDay}, ${formattedDate}</b>\n`;
+        
+        const dayButtons = [];
+        dateSlots.slice(0, 4).forEach(slot => {
+          const timeStr = moment(slot.start).tz(student.timezone || 'Asia/Jerusalem').format('HH:mm');
+          const slotId = moment(slot.start).valueOf();
+          
+          message += `   • ${timeStr}\n`;
+          dayButtons.push(Markup.button.callback(timeStr, `book_slot_${slotId}`));
+        });
+        
+        if (dayButtons.length > 0) {
+          buttons.push(dayButtons);
+        }
+        message += '\n';
+      });
+      
+      buttons.push([Markup.button.callback('🔙 חזור לתפריט', 'back_to_menu')]);
+      
+      await ctx.reply(message, {
+        parse_mode: 'HTML',
+        reply_markup: Markup.inlineKeyboard(buttons).reply_markup
+      });
+      
+    } else if (callbackData.startsWith('book_slot_')) {
+      // Book specific time slot
+      const slotId = callbackData.replace('book_slot_', '');
+      const startTime = new Date(parseInt(slotId));
+      
+      const schedulerService = require('../../services/scheduler');
+      
+      // Verify slot is still available
+      const availability = await schedulerService.checkTeacherAvailability(startTime, 60);
+      if (!availability.available) {
+        await ctx.reply('😔 זמן זה כבר לא זמין. אנא בחר זמן אחר.', {
+          reply_markup: Markup.inlineKeyboard([
+            [Markup.button.callback('🔄 רענן זמנים', 'book_alternative')],
+            [Markup.button.callback('🔙 חזור', 'back_to_menu')]
+          ]).reply_markup
+        });
+        return;
+      }
+      
+      // Book the lesson
+      const slotDetails = {
+        start: startTime,
+        end: new Date(startTime.getTime() + 60 * 60 * 1000),
+        duration: 60
+      };
+      
+      const result = await schedulerService.bookTimeSlot(slotDetails, student, {
+        booking_method: 'alternative_selection',
+        original_request: 'Selected from alternative times'
+      });
+      
+      if (result.success) {
+        const lessonTime = moment(startTime).tz(student.timezone || 'Asia/Jerusalem');
+        const dayName = getHebrewDayName(lessonTime.format('dddd'));
+        const dateStr = lessonTime.format('DD/MM/YYYY');
+        const timeStr = lessonTime.format('HH:mm');
+        
+        await ctx.reply(`✅ <b>השיעור נקבע בהצלחה!</b>\n\n📅 ${dayName}, ${dateStr}\n🕐 ${timeStr}\n\n💰 מחיר: ${result.lesson.price_amount} ${result.lesson.currency}`, {
+          parse_mode: 'HTML',
+          reply_markup: Markup.inlineKeyboard([
+            [Markup.button.callback('📋 השיעורים שלי', 'my_lessons')],
+            [Markup.button.callback('🏠 תפריט ראשי', 'back_to_menu')]
+          ]).reply_markup
+        });
+        
+        // Update student statistics
+        await student.incrementLessonCount('booked');
+        
+      } else {
+        await ctx.reply(`❌ <b>שגיאה בקביעת השיעור</b>\n\n${result.error}`, {
+          parse_mode: 'HTML',
+          reply_markup: Markup.inlineKeyboard([
+            [Markup.button.callback('🔄 נסה שוב', 'book_alternative')],
+            [Markup.button.callback('🔙 חזור', 'back_to_menu')]
+          ]).reply_markup
+        });
+      }
+    }
+    
+  } catch (error) {
+    logger.error('Error handling book alternative:', error);
+    await ctx.reply('❌ סליחה, משהו השתבש. אנא נסה שוב.', {
+      reply_markup: Markup.inlineKeyboard([
+        [Markup.button.callback('🔄 נסה שוב', 'book_lesson')],
+        [Markup.button.callback('🔙 חזור', 'back_to_menu')]
+      ]).reply_markup
+    });
+  }
+}
+
+function getHebrewDayName(englishDay) {
+  const daysMap = {
+    'Sunday': 'ראשון',
+    'Monday': 'שני',
+    'Tuesday': 'שלישי', 
+    'Wednesday': 'רביעי',
+    'Thursday': 'חמישי',
+    'Friday': 'שישי',
+    'Saturday': 'שבת'
+  };
+  return daysMap[englishDay] || englishDay;
+}
+
+/**
  * Handle reschedule confirmation with specific time slot
  */
 async function handleRescheduleConfirm(ctx, callbackData, student) {
@@ -1697,5 +1874,6 @@ module.exports = {
   handleWaitlistDay,
   handleWaitlistTime,
   handleStudentDetailsUpdate,
-  handleBackToMenu
+  handleBackToMenu,
+  handleUpdateParentDetails
 }; 

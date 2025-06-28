@@ -416,12 +416,21 @@ class CalendarService {
       
       const message = `❌ <b>ביטול שיעור</b>\n\nהשיעור שתוכנן ל-${startTime.format('DD/MM/YYYY')} בשעה ${startTime.format('HH:mm')} בוטל על ידי המורה.\n\nאנא צור קשר לתיאום שיעור חלופי או כתוב לי כאן לתיאום זמן חדש!`;
 
-      // Store notification for later sending
-      // We'll implement actual notification sending in the notification service
-      logger.info(`Lesson cancellation notification prepared for student ${student.id}`, {
+      // Send actual notification via Telegram
+      const notificationService = require('./notifications');
+      await notificationService.sendDirectMessage(student.telegram_id, message, {
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '📚 תאם שיעור חלופי', callback_data: 'book_lesson' }],
+            [{ text: '📞 צור קשר עם המורה', callback_data: 'contact_teacher' }]
+          ]
+        }
+      });
+
+      logger.info(`Lesson cancellation notification sent to student ${student.id}`, {
         lessonId: lesson.id,
-        studentTelegramId: student.telegram_id,
-        message: message.substring(0, 100) + '...'
+        studentTelegramId: student.telegram_id
       });
 
     } catch (error) {
@@ -437,8 +446,20 @@ class CalendarService {
       
       const message = `🔄 <b>שינוי זמן שיעור</b>\n\nהשיעור עודכן:\n\n⏰ זמן קודם: ${oldTime.format('DD/MM/YYYY')} בשעה ${oldTime.format('HH:mm')}\n✅ זמן חדש: ${newTime.format('DD/MM/YYYY')} בשעה ${newTime.format('HH:mm')}\n\nאשמח לשמוע ממך אישור שהזמן החדש מתאים לך!`;
 
-      // Store notification for later sending
-      logger.info(`Lesson time change notification prepared for student ${student.id}`, {
+      // Send actual notification via Telegram
+      const notificationService = require('./notifications');
+      await notificationService.sendDirectMessage(student.telegram_id, message, {
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '✅ הזמן מתאים לי', callback_data: `confirm_time_change_${lesson.id}` }],
+            [{ text: '❌ הזמן לא מתאים', callback_data: `reject_time_change_${lesson.id}` }],
+            [{ text: '📞 צור קשר עם המורה', callback_data: 'contact_teacher' }]
+          ]
+        }
+      });
+
+      logger.info(`Lesson time change notification sent to student ${student.id}`, {
         lessonId: lesson.id,
         studentTelegramId: student.telegram_id,
         oldTime: oldTime.format(),
