@@ -165,6 +165,13 @@ const handleText = async (ctx) => {
     if (message.startsWith('/')) {
       return;
     }
+    
+    // Handle special text responses from custom keyboards
+    if (message === '🔙 חזור להגדרות') {
+      const callbackHandlers = require('./callbackHandler');
+      await callbackHandlers.handleSettings(ctx, student);
+      return;
+    }
 
     logger.botLog('text_message', student.telegram_id, student.username, message);
 

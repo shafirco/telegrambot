@@ -186,10 +186,118 @@ async function handleBookLesson(ctx, student) {
  */
 async function handleMyStatus(ctx, student) {
   try {
-    // Ensure student is set in context
-    ctx.student = student;
-    const commandHandlers = require('../commands');
-    await commandHandlers.status(ctx);
+    const { Op } = require('sequelize');
+    const settings = require('../../config/settings');
+    const { Lesson, Waitlist } = require('../../models');
+    
+    // Get accurate lesson counts from database
+    const [bookedCount, completedCount, cancelledCount] = await Promise.all([
+      Lesson.count({
+        where: {
+          student_id: student.id,
+          status: {
+            [Op.notIn]: ['cancelled_by_student', 'cancelled_by_teacher', 'no_show']
+          }
+        }
+      }),
+      Lesson.count({
+        where: {
+          student_id: student.id,
+          status: 'completed'
+        }
+      }),
+      Lesson.count({
+        where: {
+          student_id: student.id,
+          status: {
+            [Op.in]: ['cancelled_by_student', 'cancelled_by_teacher', 'no_show']
+          }
+        }
+      })
+    ]);
+
+    // Get upcoming lessons
+    const upcomingLessons = await Lesson.findAll({
+      where: {
+        student_id: student.id,
+        status: {
+          [Op.in]: ['scheduled', 'confirmed', 'pending']
+        },
+        start_time: {
+          [Op.gte]: new Date()
+        }
+      },
+      order: [['start_time', 'ASC']],
+      limit: 3
+    });
+
+    let statusMessage = `📊 <b>סטטוס - ${student.getDisplayName()}</b>\n\n`;
+
+    // Personal information
+    statusMessage += `👤 <b>פרטים אישיים:</b>\n`;
+    statusMessage += `📧 אימייל: ${student.email || 'לא מוגדר'}\n`;
+    statusMessage += `📱 טלפון: ${student.phone_number || 'לא מוגדר'}\n`;
+    if (student.parent_name) {
+      statusMessage += `👨‍👩‍👧‍👦 הורה: ${student.parent_name}`;
+      if (student.parent_phone) {
+        statusMessage += ` (${student.parent_phone})`;
+      }
+      statusMessage += `\n`;
+    }
+    statusMessage += `📅 חבר מתאריך: ${moment(student.registration_date || student.createdAt).format('DD/MM/YYYY')}\n\n`;
+
+    // Lesson statistics
+    statusMessage += `📊 <b>סטטיסטיקות שיעורים:</b>\n`;
+    statusMessage += `• שיעורים מתוכננים: ${bookedCount}\n`;
+    statusMessage += `• שיעורים שהושלמו: ${completedCount}\n`;
+    statusMessage += `• שיעורים שבוטלו: ${cancelledCount}\n\n`;
+
+    // Payment information
+    statusMessage += `💰 <b>מידע כספי:</b>\n`;
+    const debtAmount = parseFloat(student.payment_debt || 0);
+    statusMessage += `• חוב נוכחי: ${debtAmount > 0 ? `${debtAmount.toFixed(2)} ${student.currency || 'ILS'}` : 'אין חוב'}\n`;
+    statusMessage += `• מטבע: ${student.currency || 'ILS'}\n\n`;
+
+    // Lesson preferences
+    statusMessage += `⚙️ <b>העדפות שיעור:</b>\n`;
+    statusMessage += `• אורך מועדף: ${student.preferred_lesson_duration || settings.lessons.defaultDuration} דקות\n`;
+    statusMessage += `• שעות מועדפות: ${student.preferred_time_start || '16:00'} - ${student.preferred_time_end || '19:00'}\n\n`;
+
+    // Upcoming lessons
+    if (upcomingLessons.length > 0) {
+      statusMessage += `📅 <b>השיעורים הקרובים שלך:</b>\n`;
+      upcomingLessons.forEach((lesson, index) => {
+        const lessonTime = moment(lesson.start_time).tz(student.timezone || 'Asia/Jerusalem');
+        const dayName = lessonTime.format('dddd');
+        const hebrewDay = getHebrewDayName(dayName);
+        const dateStr = lessonTime.format('DD/MM/YYYY');
+        const timeStr = lessonTime.format('HH:mm');
+        const statusIcon = lesson.status === 'confirmed' ? '✅' : lesson.status === 'scheduled' ? '🕐' : '📝';
+        
+        statusMessage += `${statusIcon} ${hebrewDay}, ${dateStr} בשעה ${timeStr}\n`;
+        if (lesson.topic) {
+          statusMessage += `   📚 ${lesson.topic}\n`;
+        }
+      });
+      statusMessage += '\n';
+    } else {
+      statusMessage += `📅 <b>אין שיעורים מתוכננים</b>\n\n`;
+    }
+
+    const buttons = Markup.inlineKeyboard([
+      [Markup.button.callback('📚 תאם שיעור חדש', 'book_lesson')],
+      [
+        Markup.button.callback('📋 השיעורים שלי', 'my_lessons'),
+        Markup.button.callback('⚙️ הגדרות', 'settings')
+      ],
+      [Markup.button.callback('🏠 תפריט ראשי', 'back_to_menu')]
+    ]);
+
+    await ctx.reply(statusMessage, {
+      parse_mode: 'HTML',
+      reply_markup: buttons.reply_markup
+    });
+
   } catch (error) {
     logger.error('Error in handleMyStatus:', error);
     await ctx.reply('❌ סליחה, הייתה שגיאה בהצגת המצב שלך. אנא נסה שוב.', {
@@ -1353,14 +1461,12 @@ async function handleCancelLessonMenu(ctx, student) {
  */
 async function handleUpdateParentDetails(ctx, student) {
   try {
-    const message = `👨‍👩‍👧‍👦 <b>עדכון פרטי הורה</b>\n\nמה תרצה לעדכן?\n\n<b>הפרטים הנוכחיים:</b>\n👤 שם הורה: ${student.parent_name || 'לא מוגדר'}\n📱 טלפון הורה: ${student.parent_phone || 'לא מוגדר'}\n📧 אימייל הורה: ${student.parent_email || 'לא מוגדר'}`;
+    const message = `👨‍👩‍👧‍👦 <b>עדכון פרטי הורה</b>\n\n🚧 <b>תכונה זו בבנייה</b>\n\nעדכון פרטי ההורים יהיה זמין בקרוב.\nבינתיים, אתה יכול לפנות ישירות למורה:\n\n📞 <b>טלפון:</b> 0544271232\n📧 <b>אימייל:</b> shafshaf6@gmail.com\n\nנשמח לעדכן את הפרטים עבורך! 😊`;
     
     await ctx.reply(message, {
       parse_mode: 'HTML',
       reply_markup: Markup.inlineKeyboard([
-        [Markup.button.callback('👤 שם הורה', 'update_detail_parent_name')],
-        [Markup.button.callback('📱 טלפון הורה', 'update_detail_parent_phone')],
-        [Markup.button.callback('📧 אימייל הורה', 'update_detail_parent_email')],
+        [Markup.button.callback('📞 פרטי המורה', 'teacher_details')],
         [Markup.button.callback('🔙 חזור להגדרות', 'settings')]
       ]).reply_markup
     });
@@ -1540,7 +1646,7 @@ async function handleConfirmCancel(ctx, callbackData, student) {
       studentId: student.id,
       hoursUntilLesson,
       isLateCancel,
-      cancellationFee
+      cancellationFee: cancellationFeeAmount
     });
 
   } catch (error) {
@@ -1564,6 +1670,25 @@ async function handleUpdateDetailField(ctx, callbackData, student) {
   };
 
   const fieldName = fieldNames[field];
+  
+  // Special handling for phone field - use contact sharing instead of text input
+  if (field === 'phone') {
+    await ctx.reply(
+      `📱 <b>עדכון מספר טלפון</b>\n\nלעדכון מספר הטלפון, אנא השתמש בכפתור "שתף מספר טלפון" למטה או פנה ישירות למורה.\n\n📞 <b>יצירת קשר ישירה:</b>\nטלפון: 0544271232\nאימייל: shafshaf6@gmail.com`,
+      { 
+        parse_mode: 'HTML',
+        reply_markup: {
+          keyboard: [
+            [{ text: '📱 שתף מספר טלפון', request_contact: true }],
+            [{ text: '🔙 חזור להגדרות' }]
+          ],
+          resize_keyboard: true,
+          one_time_keyboard: true
+        }
+      }
+    );
+    return;
+  }
   
   await ctx.reply(
     `✏️ <b>עדכון ${fieldName}</b>\n\nאנא שלח את ${fieldName} החדש:`,
@@ -1728,6 +1853,16 @@ function getHebrewDayName(englishDay) {
     'Saturday': 'שבת'
   };
   return daysMap[englishDay] || englishDay;
+}
+
+function getHebrewTimePreference(timePreference) {
+  const timeMap = {
+    'morning': 'בוקר',
+    'afternoon': 'אחר הצהריים',
+    'evening': 'ערב',
+    'anytime': 'גמיש'
+  };
+  return timeMap[timePreference] || timePreference;
 }
 
 /**
