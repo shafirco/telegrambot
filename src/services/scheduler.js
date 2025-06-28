@@ -161,7 +161,7 @@ class SchedulerService {
         return [];
       }
 
-      // Create time slots every 30 minutes during business hours
+      // Create time slots every hour during business hours
       const [startHour, startMinute] = settings.businessHours.start.split(':').map(Number);
       const [endHour, endMinute] = settings.businessHours.end.split(':').map(Number);
 
@@ -216,8 +216,8 @@ class SchedulerService {
           logger.info(`Slot too soon (${minutesUntilSlot}m): ${currentSlot.format('YYYY-MM-DD HH:mm')}`);
         }
         
-        // Move to next 30-minute slot
-        currentSlot.add(30, 'minutes');
+        // Move to next hour slot (only whole hours)
+        currentSlot.add(60, 'minutes');
       }
 
       logger.info(`Found ${availableSlots.length} available slots for ${searchDate}`);

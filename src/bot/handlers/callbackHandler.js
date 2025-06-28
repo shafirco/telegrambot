@@ -33,9 +33,7 @@ async function handle(ctx) {
         await handleBookLesson(ctx, student);
         break;
         
-      case 'my_schedule':
-        await handleMySchedule(ctx, student);
-        break;
+
         
       case 'my_lessons':
         await handleMyLessons(ctx, student);
@@ -114,6 +112,8 @@ async function handle(ctx) {
         // Handle complex callback data (with parameters)
         if (callbackData.startsWith('book_slot_')) {
           await handleBookSlot(ctx, callbackData, student);
+        } else if (callbackData.startsWith('lesson_details_')) {
+          await handleLessonDetails(ctx, callbackData, student);
         } else if (callbackData.startsWith('cancel_lesson_')) {
           await handleCancelLesson(ctx, callbackData, student);
         } else if (callbackData.startsWith('confirm_cancel_')) {
@@ -176,13 +176,7 @@ async function handleBookLesson(ctx, student) {
   ctx.session.step = 'booking_request';
 }
 
-/**
- * Handle my schedule callback
- */
-async function handleMySchedule(ctx, student) {
-  const commandHandlers = require('../commands');
-  await commandHandlers.schedule(ctx);
-}
+
 
 /**
  * Handle my status callback
@@ -575,25 +569,22 @@ async function handleBackToMenu(ctx, student) {
     ctx.session.lastActivity = Date.now();
   }
   
-  const buttons = Markup.inlineKeyboard([
-    [Markup.button.callback('📚 תיאום שיעור', 'book_lesson')],
-    [
-      Markup.button.callback('📅 לוח הזמנים שלי', 'my_schedule'),
-      Markup.button.callback('📋 השיעורים שלי', 'my_lessons')
-    ],
-    [
-      Markup.button.callback('🔄 החלף שיעור', 'reschedule_lesson'),
-      Markup.button.callback('❌ בטל שיעור', 'cancel_lesson')
-    ],
-    [
-      Markup.button.callback('📊 המצב שלי', 'my_status'),
-      Markup.button.callback('👨‍🏫 פרטי המורה', 'teacher_details')
-    ],
-    [
-      Markup.button.callback('⚙️ הגדרות', 'settings'),
-      Markup.button.callback('❓ עזרה', 'help')
-    ]
-  ]);
+      const buttons = Markup.inlineKeyboard([
+      [Markup.button.callback('📚 תיאום שיעור', 'book_lesson')],
+      [Markup.button.callback('📋 השיעורים שלי', 'my_lessons')],
+      [
+        Markup.button.callback('🔄 החלף שיעור', 'reschedule_lesson'),
+        Markup.button.callback('❌ בטל שיעור', 'cancel_lesson')
+      ],
+      [
+        Markup.button.callback('📊 המצב שלי', 'my_status'),
+        Markup.button.callback('👨‍🏫 פרטי המורה', 'teacher_details')
+      ],
+      [
+        Markup.button.callback('⚙️ הגדרות', 'settings'),
+        Markup.button.callback('❓ עזרה', 'help')
+      ]
+    ]);
 
   try {
     await ctx.editMessageText(
@@ -621,17 +612,8 @@ async function handleBackToMenu(ctx, student) {
  * Handle settings done callback
  */
 async function handleSettingsDone(ctx, student) {
-  await ctx.reply(
-    `✅ <b>הגדרות נשמרו</b>\n\nההגדרות שלך נשמרו בהצלחה!`,
-    { 
-      parse_mode: 'HTML',
-      reply_markup: Markup.inlineKeyboard([
-        [Markup.button.callback('📚 תאם שיעור', 'book_lesson')],
-        [Markup.button.callback('📅 הלוח שלי', 'my_schedule'), Markup.button.callback('📊 סטטוס', 'my_status')],
-        [Markup.button.callback('❓ עזרה', 'help')]
-      ]).reply_markup
-    }
-  );
+  // Just go back to main menu
+  await handleBackToMenu(ctx, student);
 }
 
 /**
@@ -1487,7 +1469,8 @@ async function handleConfirmCancel(ctx, callbackData, student) {
     const startTime = moment(lesson.start_time).tz(student.timezone || 'Asia/Jerusalem');
     const hoursUntilLesson = startTime.diff(moment(), 'hours');
     const isLateCancel = hoursUntilLesson < 24;
-    const cancellationFee = isLateCancel ? 50 : 0; // 50% fee for late cancellation
+    const cancellationFeePercent = isLateCancel ? 50 : 0; // 50% fee for late cancellation
+    const cancellationFeeAmount = isLateCancel ? (lesson.price_amount * 0.5) : 0;
 
     // Cancel the lesson
     await lesson.update({
@@ -1496,6 +1479,15 @@ async function handleConfirmCancel(ctx, callbackData, student) {
       cancelled_by: 'student',
       cancellation_reason: isLateCancel ? 'Late cancellation with fee' : 'Standard cancellation'
     });
+
+    // Update student debt if late cancellation
+    if (isLateCancel && cancellationFeeAmount > 0) {
+      const currentDebt = parseFloat(student.payment_debt || 0);
+      await student.update({
+        payment_debt: currentDebt + cancellationFeeAmount
+      });
+      logger.info(`Added cancellation fee ${cancellationFeeAmount} to student ${student.id} debt`);
+    }
 
     // Cancel in Google Calendar if sync is enabled
     if (lesson.google_calendar_event_id) {
@@ -1513,9 +1505,9 @@ async function handleConfirmCancel(ctx, callbackData, student) {
     message += `⏰ שעה: ${startTime.format('HH:mm')}\n\n`;
 
     if (isLateCancel) {
-      message += `💰 <b>חיוב ביטול:</b> ${cancellationFee}% מעלות השיעור\n`;
+      message += `💰 <b>חיוב ביטול:</b> ${cancellationFeeAmount} ${lesson.currency || 'ILS'}\n`;
       message += `ℹ️ הביטול התבצע פחות מ-24 שעות מראש, לכן חל חיוב של 50% מעלות השיעור.\n\n`;
-      message += `החיוב יתווסף לחשבון הבא שלך.`;
+      message += `החיוב נוסף לחוב הנוכחי שלך.`;
     } else {
       message += `✅ הביטול התבצע ללא חיוב.`;
     }
@@ -1942,7 +1934,6 @@ async function handleTeacherDetails(ctx, student) {
   await ctx.reply(message, {
     parse_mode: 'HTML',
     reply_markup: Markup.inlineKeyboard([
-      [Markup.button.callback('📞 צור קשר', 'contact_teacher')],
       [Markup.button.callback('🏠 תפריט ראשי', 'back_to_menu')]
     ]).reply_markup
   });

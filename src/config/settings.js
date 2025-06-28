@@ -14,7 +14,7 @@ const settings = {
   // Business Hours Configuration
   businessHours: {
     start: process.env.BUSINESS_HOURS_START || '10:00',
-    end: process.env.BUSINESS_HOURS_END || '18:00',
+    end: process.env.BUSINESS_HOURS_END || '19:00',
     days: ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי'], // Hebrew business days
     timezone: process.env.TEACHER_TIMEZONE || 'Asia/Jerusalem'
   },

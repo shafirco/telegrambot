@@ -495,7 +495,7 @@ const handleGeneralMessage = async (ctx, message, student) => {
           parse_mode: 'HTML',
           reply_markup: Markup.inlineKeyboard([
             [Markup.button.callback('📚 תאם שיעור', 'book_lesson')],
-            [Markup.button.callback('📅 השיעורים שלי', 'my_schedule')],
+            [Markup.button.callback('📋 השיעורים שלי', 'my_lessons')],
             [Markup.button.callback('❓ עזרה מלאה', 'help')]
           ]).reply_markup
         }
@@ -553,7 +553,7 @@ const handleGeneralMessage = async (ctx, message, student) => {
         case 'schedule':
           await ctx.reply('📅 בואו נבדוק את השיעורים שלך!', {
             reply_markup: Markup.inlineKeyboard([
-              [Markup.button.callback('📅 השיעורים שלי', 'my_schedule')]
+              [Markup.button.callback('📋 השיעורים שלי', 'my_lessons')]
             ]).reply_markup
           });
           break;
@@ -565,7 +565,7 @@ const handleGeneralMessage = async (ctx, message, student) => {
               parse_mode: 'HTML',
               reply_markup: Markup.inlineKeyboard([
                 [Markup.button.callback('❌ בטל שיעור', 'cancel_lesson')],
-                [Markup.button.callback('📅 הצג שיעורים', 'my_schedule')]
+                [Markup.button.callback('📋 הצג שיעורים', 'my_lessons')]
               ]).reply_markup
             }
           );
@@ -578,7 +578,7 @@ const handleGeneralMessage = async (ctx, message, student) => {
               parse_mode: 'HTML',
               reply_markup: Markup.inlineKeyboard([
                 [Markup.button.callback('🔄 החלף שיעור', 'reschedule_lesson')],
-                [Markup.button.callback('📅 הצג שיעורים', 'my_schedule')]
+                [Markup.button.callback('📋 הצג שיעורים', 'my_lessons')]
               ]).reply_markup
             }
           );
@@ -641,7 +641,7 @@ const handleGeneralMessage = async (ctx, message, student) => {
               parse_mode: 'HTML',
               reply_markup: Markup.inlineKeyboard([
                 [Markup.button.callback('📚 תאם שיעור', 'book_lesson')],
-                [Markup.button.callback('📅 השיעורים שלי', 'my_schedule')],
+                [Markup.button.callback('📋 השיעורים שלי', 'my_lessons')],
                 [Markup.button.callback('❓ עזרה מלאה', 'help')],
                 [Markup.button.callback('⚙️ הגדרות', 'settings')]
               ]).reply_markup
@@ -657,7 +657,7 @@ const handleGeneralMessage = async (ctx, message, student) => {
             parse_mode: 'HTML',
             reply_markup: Markup.inlineKeyboard([
               [Markup.button.callback('📚 תאם שיעור', 'book_lesson')],
-              [Markup.button.callback('📅 השיעורים שלי', 'my_schedule')],
+              [Markup.button.callback('📋 השיעורים שלי', 'my_lessons')],
               [Markup.button.callback('❓ עזרה', 'help')]
             ]).reply_markup
           }

@@ -3,7 +3,7 @@ const { Markup } = require('telegraf');
 const schedulerService = require('../../services/scheduler');
 const { Lesson, Waitlist, Student } = require('../../models');
 const logger = require('../../utils/logger');
-const config = require('../../config/settings');
+const settings = require('../../config/settings');
 const { Op } = require('sequelize');
 
 // Start command - welcome new users
@@ -14,7 +14,7 @@ const start = async (ctx) => {
     
     const welcomeMessage = isReturningUser 
       ? `ברוך הבא ${student.getDisplayName()}! 👋`
-      : `ברוך הבא לבוט ההוראה של ${config.teacher.name}! 🎓\n\nאני כאן לעזור לך לתאם שיעורי מתמטיקה בקלות באמצעות שפה טבעית.`;
+      : `ברוך הבא לבוט ההוראה של ${settings.teacher.name}! 🎓\n\nאני כאן לעזור לך לתאם שיעורי מתמטיקה בקלות באמצעות שפה טבעית.`;
 
     const description = !isReturningUser ? `
 ✨ <b>מה אני יכול לעשות:</b>
@@ -31,16 +31,13 @@ const start = async (ctx) => {
 • "איזה זמנים פנויים יש השבוע הבא?"
 • "אני צריך לבטל את השיעור ביום שלישי"
 
-<b>שעות פעילות:</b> ${config.businessHours.start} - ${config.businessHours.end}
-<b>ימי פעילות:</b> ${config.businessHours.days.join(', ')}
+<b>שעות פעילות:</b> ${settings.businessHours.start} - ${settings.businessHours.end}
+<b>ימי פעילות:</b> ${settings.businessHours.days.join(', ')}
 ` : ``;
 
     const buttons = Markup.inlineKeyboard([
       [Markup.button.callback('📚 תיאום שיעור', 'book_lesson')],
-      [
-        Markup.button.callback('📅 לוח הזמנים שלי', 'my_schedule'),
-        Markup.button.callback('📋 השיעורים שלי', 'my_lessons')
-      ],
+      [Markup.button.callback('📋 השיעורים שלי', 'my_lessons')],
       [
         Markup.button.callback('🔄 החלף שיעור', 'reschedule_lesson'),
         Markup.button.callback('❌ בטל שיעור', 'cancel_lesson')
@@ -96,7 +93,7 @@ const help = async (ctx) => {
 <b>📞 יצירת קשר:</b>
 אם אתה נתקל בבעיה, פשוט כתוב לי ואני אעזור!
 
-<b>שעות פעילות:</b> ${config.businessHours.start} - ${config.businessHours.end}
+<b>שעות פעילות:</b> ${settings.businessHours.start} - ${settings.businessHours.end}
 <b>ימי פעילות:</b> ראשון, שני, שלישי, רביעי, חמישי
 `;
 
@@ -133,8 +130,8 @@ const book = async (ctx) => {
 • "איזה זמנים פנויים יש השבוע?"
 
 <b>ההגדרות הנוכחיות שלך:</b>
-• אורך שיעור: ${student.preferred_lesson_duration || config.lessons.defaultDuration} דקות
-• איזור הזמן שלך: ${student.timezone || config.teacher.timezone}
+• אורך שיעור: ${student.preferred_lesson_duration || settings.lessons.defaultDuration} דקות
+• איזור הזמן שלך: ${student.timezone || settings.teacher.timezone}
 
 פשוט כתוב לי את הזמן המועדף עליך באופן טבעי, ואני אמצא עבורך את הזמנים הזמינים הטובים ביותר! 🕐
     `;
@@ -189,7 +186,7 @@ const schedule = async (ctx) => {
     let scheduleMessage = `📅 <b>השיעורים הקרובים שלך</b>\n\n`;
 
     upcomingLessons.forEach((lesson, index) => {
-      const startTime = moment(lesson.start_time).tz(student.timezone || config.teacher.timezone);
+      const startTime = moment(lesson.start_time).tz(student.timezone || settings.teacher.timezone);
       const status = lesson.status === 'scheduled' ? '🕐' : lesson.status === 'confirmed' ? '✅' : '📝';
       
       scheduleMessage += `${status} <b>שיעור ${index + 1}</b>\n`;
@@ -296,14 +293,18 @@ const status = async (ctx) => {
 
     // Payment information including debt
     statusMessage += `💰 <b>מידע כספי:</b>\n`;
-    statusMessage += `• חוב נוכחי: ${student.getFormattedDebt()}\n`;
+    const debtAmount = parseFloat(student.payment_debt || 0);
+    statusMessage += `• חוב נוכחי: ${debtAmount > 0 ? `${debtAmount.toFixed(2)} ${student.currency || 'ILS'}` : 'אין חוב'}\n`;
     statusMessage += `• מטבע: ${student.currency || 'ILS'}\n\n`;
 
     // Lesson preferences with Hebrew day names
     statusMessage += `⚙️ <b>העדפות שיעור:</b>\n`;
-    statusMessage += `• אורך מועדף: ${student.preferred_lesson_duration || config.lessons.defaultDuration} דקות\n`;
-    const hebrewDays = student.getPreferredDaysHebrew();
-    statusMessage += `• ימים מועדפים: ${hebrewDays.join(', ')}\n`;
+    statusMessage += `• אורך מועדף: ${student.preferred_lesson_duration || settings.lessons.defaultDuration} דקות\n`;
+    const preferredDays = student.preferred_days ? student.preferred_days.split(',').map(day => {
+      const daysMap = {'0': 'ראשון', '1': 'שני', '2': 'שלישי', '3': 'רביעי', '4': 'חמישי', '5': 'שישי', '6': 'שבת'};
+      return daysMap[day.trim()] || day;
+    }) : ['כל הימים'];
+    statusMessage += `• ימים מועדפים: ${preferredDays.join(', ')}\n`;
     statusMessage += `• שעות מועדפות: ${student.preferred_time_start || '16:00'} - ${student.preferred_time_end || '19:00'}\n\n`;
 
     // Upcoming lessons - showing actual future lessons
@@ -356,9 +357,10 @@ const status = async (ctx) => {
     const buttons = Markup.inlineKeyboard([
       [Markup.button.callback('📚 תאם שיעור חדש', 'book_lesson')],
       [
-        Markup.button.callback('📅 כל השיעורים', 'my_schedule'),
+        Markup.button.callback('📋 השיעורים שלי', 'my_lessons'),
         Markup.button.callback('⚙️ הגדרות', 'settings')
-      ]
+      ],
+      [Markup.button.callback('🏠 תפריט ראשי', 'back_to_menu')]
     ]);
 
     await ctx.reply(statusMessage, {
@@ -474,10 +476,22 @@ const settings = async (ctx) => {
 🕒 שעות מועדפות: ${student.preferred_time_start || '16:00'} - ${student.preferred_time_end || '19:00'}
 
 💳 <b>מידע כספי:</b>
-💰 מחיר לשעה: ₪${config.lessons.defaultPrice}
-💸 חוב נוכחי: ${student.getFormattedDebt()}
-📊 סה"כ שיעורים: ${student.total_lessons_booked || 0}
-✅ שיעורים שהושלמו: ${student.total_lessons_completed || 0}`;
+💰 מחיר לשעה: ₪${settings.lessons.defaultPrice}
+💸 חוב נוכחי: ${parseFloat(student.payment_debt || 0) > 0 ? `${parseFloat(student.payment_debt).toFixed(2)} ${student.currency || 'ILS'}` : 'אין חוב'}
+📊 סה"כ שיעורים: ${await Lesson.count({
+      where: {
+        student_id: student.id,
+        status: {
+          [Op.notIn]: ['cancelled_by_student', 'cancelled_by_teacher', 'no_show']
+        }
+      }
+    })}
+✅ שיעורים שהושלמו: ${await Lesson.count({
+      where: {
+        student_id: student.id,
+        status: 'completed'
+      }
+    })}`;
 
   await ctx.reply(settingsText, {
     parse_mode: 'HTML',
