@@ -181,21 +181,21 @@ const Student = sequelize.define('Student', {
     }
   },
   
-  // Payment information will be added in future migration
-  // payment_debt: {
-  //   type: DataTypes.DECIMAL(10, 2),
-  //   allowNull: false,
-  //   defaultValue: 0.00,
-  //   validate: {
-  //     min: 0
-  //   }
-  // },
+  // Payment information
+  payment_debt: {
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: false,
+    defaultValue: 0.00,
+    validate: {
+      min: 0
+    }
+  },
   
-  // currency: {
-  //   type: DataTypes.STRING(3),
-  //   allowNull: false,
-  //   defaultValue: 'ILS'
-  // }
+  currency: {
+    type: DataTypes.STRING(3),
+    allowNull: false,
+    defaultValue: 'ILS'
+  }
 }, {
   indexes: [
     {
@@ -273,20 +273,22 @@ Student.prototype.incrementLessonCount = async function(type = 'booked') {
 };
 
 Student.prototype.addDebt = async function(amount) {
-  // TODO: Implement debt tracking when payment_debt column is added
-  console.log(`Adding debt ${amount} for student ${this.id} - feature pending migration`);
-  return 0;
+  this.payment_debt = parseFloat(this.payment_debt || 0) + parseFloat(amount);
+  await this.save();
+  return this.payment_debt;
 };
 
 Student.prototype.payDebt = async function(amount) {
-  // TODO: Implement debt payment when payment_debt column is added
-  console.log(`Paying debt ${amount} for student ${this.id} - feature pending migration`);
-  return 0;
+  const currentDebt = parseFloat(this.payment_debt || 0);
+  const paymentAmount = parseFloat(amount);
+  this.payment_debt = Math.max(0, currentDebt - paymentAmount);
+  await this.save();
+  return this.payment_debt;
 };
 
 Student.prototype.getFormattedDebt = function() {
-  // TODO: Return actual debt when payment_debt column is added
-  return 'אין חוב';
+  const debt = parseFloat(this.payment_debt || 0);
+  return debt > 0 ? `${debt.toFixed(2)} ${this.currency}` : 'אין חוב';
 };
 
 Student.prototype.getPreferredDaysHebrew = function() {

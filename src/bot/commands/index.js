@@ -293,7 +293,7 @@ const status = async (ctx) => {
     // Payment information including debt
     statusMessage += `💰 <b>מידע כספי:</b>\n`;
     statusMessage += `• חוב נוכחי: ${student.getFormattedDebt()}\n`;
-    statusMessage += `• מטבע: ILS\n\n`;
+    statusMessage += `• מטבע: ${student.currency || 'ILS'}\n\n`;
 
     // Lesson preferences with Hebrew day names
     statusMessage += `⚙️ <b>העדפות שיעור:</b>\n`;

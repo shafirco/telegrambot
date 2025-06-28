@@ -101,6 +101,16 @@ class Application {
     try {
       await database.authenticate();
       await database.sync();
+      
+      // Run any pending migrations
+      try {
+        const { migrateDatabase } = require('../scripts/migrate-database');
+        await migrateDatabase();
+        logger.info('Database migrations completed');
+      } catch (migrationError) {
+        logger.warn('Migration failed (this may be expected if columns already exist):', migrationError.message);
+      }
+      
       logger.info('Database connection established successfully');
     } catch (error) {
       logger.error('Unable to connect to the database:', error);
