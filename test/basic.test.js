@@ -4,7 +4,8 @@ const moment = require('moment-timezone');
 // Mock environment for testing
 process.env.NODE_ENV = 'test';
 process.env.OPENAI_API_KEY = 'dummy_key_for_testing';
-process.env.DATABASE_PATH = ':memory:';
+// Use in-memory SQLite for tests (no DATABASE_URL)
+delete process.env.DATABASE_URL;
 
 describe('Basic Functionality Tests', () => {
   

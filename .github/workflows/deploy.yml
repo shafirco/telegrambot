@@ -28,7 +28,7 @@ jobs:
         NODE_ENV: test
         TELEGRAM_BOT_TOKEN: "12345:dummy_token_for_testing_very_long_token_string"
         OPENAI_API_KEY: "sk-dummy_key_for_testing_very_long_api_key_string"
-        DATABASE_PATH: ":memory:"
+        # No DATABASE_URL for tests - will use SQLite
         TEACHER_TIMEZONE: Asia/Jerusalem
         TEACHER_NAME: שפיר
     
@@ -41,7 +41,7 @@ jobs:
         NODE_ENV: test
         TELEGRAM_BOT_TOKEN: "12345:dummy_token_for_testing_very_long_token_string"
         OPENAI_API_KEY: "sk-dummy_key_for_testing_very_long_api_key_string"
-        DATABASE_PATH: ":memory:"
+        # No DATABASE_URL for tests - will use SQLite
         TEACHER_TIMEZONE: Asia/Jerusalem
         TEACHER_NAME: שפיר
 

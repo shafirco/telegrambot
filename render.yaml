@@ -50,6 +50,6 @@ services:
         value: "0.7"
       - key: AI_RESPONSE_TIMEOUT
         value: "10000"
-      - key: DATABASE_PATH
-        value: ./data/scheduler.db
+      - key: DATABASE_URL
+        sync: false
     healthCheckPath: /health 

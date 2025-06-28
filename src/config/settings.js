@@ -114,7 +114,7 @@ const settings = {
 
   database: {
     dialect: 'sqlite',
-    storage: process.env.DATABASE_PATH || './data/scheduler.db',
+    // Database config moved to database.js
     logging: process.env.NODE_ENV === 'development',
     timezone: '+02:00' // Israel timezone
   }
