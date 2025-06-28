@@ -221,7 +221,7 @@ async function handleMyStatus(ctx, student) {
       where: {
         student_id: student.id,
         status: {
-          [Op.in]: ['scheduled', 'confirmed', 'pending']
+          [Op.in]: ['scheduled', 'confirmed', 'in_progress']
         },
         start_time: {
           [Op.gte]: new Date()
@@ -348,7 +348,7 @@ async function handleWaitlistJoin(ctx, student) {
         start_time: {
           [require('sequelize').Op.between]: [startDate.toDate(), endDate.toDate()]
         },
-        status: ['confirmed', 'pending']
+        status: ['confirmed', 'scheduled']
       },
       attributes: ['start_time'],
       order: [['start_time', 'ASC']]
@@ -2163,7 +2163,7 @@ async function handleLessonDetails(ctx, callbackData, student) {
     const statusEmoji = {
       'scheduled': '🕐',
       'confirmed': '✅',
-      'pending': '📝',
+      'in_progress': '🎯',
       'completed': '🎓',
       'cancelled_by_student': '❌',
       'cancelled_by_teacher': '🚫',
@@ -2173,7 +2173,7 @@ async function handleLessonDetails(ctx, callbackData, student) {
     const statusText = {
       'scheduled': 'מתוכנן',
       'confirmed': 'מאושר',
-      'pending': 'ממתין לאישור',
+      'in_progress': 'בביצוע',
       'completed': 'הושלם',
       'cancelled_by_student': 'בוטל על ידך',
       'cancelled_by_teacher': 'בוטל על ידי המורה',
