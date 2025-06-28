@@ -342,6 +342,22 @@ const handleBookingRequest = async (ctx, message, student) => {
         await ctx.reply(result.message, { parse_mode: 'HTML' });
       } else if (result.type === 'availability_check') {
         await showAvailabilityResults(ctx, result.availableSlots, result.message);
+      } else if (result.type === 'ai_response' || result.type === 'general_help' || 
+                 result.type === 'greeting' || result.type === 'pricing_info' || 
+                 result.type === 'subjects_info' || result.type === 'help_scheduling' ||
+                 result.type === 'error_recovery' || result.type === 'discount_info' ||
+                 result.type === 'explanation' || result.type === 'appreciation') {
+        // Handle all types of helpful responses from scheduler service
+        await ctx.reply(result.message, { 
+          parse_mode: 'HTML',
+          reply_markup: Markup.inlineKeyboard([
+            [Markup.button.callback('📚 תאם שיעור', 'book_lesson')],
+            [Markup.button.callback('📅 זמנים זמינים', 'show_available_times')],
+            [Markup.button.callback('🏠 תפריט ראשי', 'back_to_menu')]
+          ]).reply_markup
+        });
+        // Clear conversation state for these general responses
+        ctx.session.step = null;
       }
     } else {
       if (result.type === 'no_slots_waitlist_offered') {

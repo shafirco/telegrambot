@@ -419,7 +419,9 @@ class AIScheduler {
       { pattern: /אחרי (\d+)/, match: 1, modifier: 'after' }, // אחרי 3 = after 3
       { pattern: /לפני (\d+)/, match: 1, modifier: 'before' }, // לפני 4 = before 4
       // Enhanced standalone number patterns - better flexibility
-      { pattern: /\b(\d{1,2})\b(?!:)/, match: 1, modifier: 'smart_default' }, // Standalone numbers like "5"
+      { pattern: /\b(\d{1,2})\b(?![:\.\d])/, match: 1, modifier: 'smart_default' }, // Standalone numbers like "5"
+      { pattern: /שעה\s*(\d{1,2})\b/, match: 1, modifier: 'smart_default' }, // "שעה 5"
+      { pattern: /ב-?(\d{1,2})\b/, match: 1, modifier: 'smart_default' }, // "ב-5" or "ב5"
       { pattern: /(\d+)\s*וחצי/, match: 1, modifier: 'half_hour' }, // "5 וחצי" = 5:30
       { pattern: /ברבע לפני (\d+)/, match: 1, modifier: 'quarter_before' }, // רבע לפני 5 = 4:45
       { pattern: /ברבע אחרי (\d+)/, match: 1, modifier: 'quarter_after' }, // רבע אחרי 5 = 5:15
@@ -460,14 +462,25 @@ class AIScheduler {
                 } else if (timePattern.modifier === 'evening' && hour <= 8) {
                   hour += 12;
                 } else if (timePattern.modifier === 'smart_default') {
-                  // Smart default for standalone numbers: prefer afternoon/evening for lessons
-                  if (hour >= 1 && hour <= 7) {
-                    hour += 12; // 1-7 becomes 13:00-19:00 (1PM-7PM)
-                  } else if (hour >= 8 && hour <= 12) {
-                    // 8-12 stays as is (morning/noon hours)
-                    hour = hour; 
+                  // Enhanced smart default for standalone numbers: prefer afternoon/evening for lessons
+                  if (hour >= 1 && hour <= 9) {
+                    // 1-9 becomes 13:00-21:00 (1PM-9PM) - most common lesson times
+                    hour += 12;
+                  } else if (hour === 10 || hour === 11) {
+                    // 10-11 stays as morning (10AM-11AM)
+                    hour = hour;
+                  } else if (hour === 12) {
+                    // 12 stays as noon
+                    hour = 12;
                   } else if (hour === 0) {
-                    hour = 12; // midnight -> noon
+                    // 0 becomes noon
+                    hour = 12;
+                  } else if (hour >= 13 && hour <= 21) {
+                    // Already in 24-hour format, keep as is
+                    hour = hour;
+                  } else {
+                    // Default fallback to 5PM for unusual numbers
+                    hour = 17;
                   }
                 } else if (timePattern.modifier === 'half_hour') {
                   // Handle "5 וחצי" = 5:30
